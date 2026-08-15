@@ -1,0 +1,278 @@
+/*
+ * Skin Studio —— DeepSeek Harness Web UI 皮肤。
+ *
+ * 结构参考 codex-skin-studio：页面最底层放一个固定的「画布层」承载背景图，
+ * 界面上所有表面改成半透明，背景图便从下面透上来；透光强度由 wash 蒙版
+ * 与各表面的 alpha 控制。
+ *
+ * 换肤只改变量，不碰 dsh 的任何结构选择器或类名：
+ *   --dsw-static-*  是 dsh 的色板
+ *   --dsw-alias-*   是 dsh 的语义层（78 个）
+ * 因此 dsh 升级换了组件实现，皮肤依然有效。
+ *
+ * 所有可调项都以 --skin-* 变量暴露，由插件在运行时按用户设置写到 :root 上。
+ */
+
+/* ── 可调变量的默认值（暗色） ────────────────────────────────────
+   插件会把 dsh 的明暗状态镜像到 html[data-skin-mode] 上；基色一翻转，
+   下面所有 color-mix 公式在浅色下同样成立，不需要写两套。 */
+:root {
+  /* 底色与强调色 */
+  --skin-bg: #171817;
+  --skin-text: #f3f2ed;
+  --skin-muted: #aaa9a2;
+  --skin-accent: #d3aa61;
+  --skin-accent-ink: #201a10;
+
+  /* 背景图：none 表示纯色底 */
+  --skin-image: none;
+  --skin-image-opacity: 0.5;
+  --skin-image-blur: 0px;
+  --skin-image-scale: 1;
+  --skin-position-x: 50%;
+  --skin-position-y: 50%;
+  /* 主图下面再垫一层放大模糊的同图，边缘不会露出硬边 */
+  --skin-backdrop-opacity: 0.18;
+  --skin-backdrop-blur: 24px;
+
+  /*
+   * 宿主窗口把系统控件（macOS 交通灯）浮在页面左上角时，这里填控件条的高度，
+   * dsh 的侧栏据此向下让出一段，logo 就不会被按钮压住。纯浏览器下为 0。
+   */
+  --skin-window-controls: 0px;
+
+  /* 宿主（桌面壳）在左侧占了一条图标栏时，把画布按整窗坐标外扩这么多，
+     壳那条栏就能画出同一张图的左侧切片，两边接成一整张。纯浏览器下为 0。 */
+  --skin-inset-left: 0px;
+
+  /* 蒙版：盖在背景图之上、界面之下，压低背景图对可读性的干扰 */
+  --skin-wash: rgba(23, 24, 23, 0.58);
+
+  /* 表面透明度：0 = 完全不透（看不见背景图），1 = 最透。
+     上限刻意收窄（主表面最多让出 30%），再透文字就压不住背景图了。 */
+  --skin-transparency: 0.8;
+
+  /* 圆角与动效 */
+  --skin-radius: 13px;
+  --skin-control-radius: 8px;
+  --skin-duration: 160ms;
+  --skin-easing: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-skin-mode="light"] {
+  --skin-bg: #f6f5f1;
+  --skin-text: #201f1c;
+  --skin-muted: #6f6d64;
+  --skin-accent: #a8763a;
+  --skin-accent-ink: #fffaf0;
+  --skin-wash: rgba(246, 245, 241, 0.6);
+}
+
+/* ── 画布层 ───────────────────────────────────────────────────────
+   固定在视口、z-index -1；body 需要 isolation 建立层叠上下文，
+   否则 -1 会被 body 自身背景盖住。 */
+html.skin-studio,
+html.skin-studio body {
+  background-color: var(--skin-bg) !important;
+}
+
+html.skin-studio body {
+  position: relative;
+  isolation: isolate;
+}
+
+#skin-studio-art {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background-color: var(--skin-bg);
+}
+
+#skin-studio-art > .skin-backdrop,
+#skin-studio-art > .skin-canvas {
+  position: absolute;
+  pointer-events: none;
+  background-image: var(--skin-image);
+  background-position: var(--skin-position-x) var(--skin-position-y);
+  background-repeat: no-repeat;
+}
+
+/* 垫底的放大模糊层：向外溢出 5% 并轻微放大，四周不会出现硬边 */
+#skin-studio-art > .skin-backdrop {
+  inset: -5%;
+  left: calc(-5% - var(--skin-inset-left));
+  background-size: cover;
+  opacity: var(--skin-backdrop-opacity);
+  filter: blur(var(--skin-backdrop-blur));
+  transform: scale(1.06);
+}
+
+#skin-studio-art > .skin-canvas {
+  inset: 0;
+  left: calc(-1 * var(--skin-inset-left));
+  z-index: 1;
+  background-size: cover;
+  opacity: var(--skin-image-opacity);
+  filter: blur(var(--skin-image-blur));
+  transform: scale(var(--skin-image-scale));
+  transition: opacity var(--skin-duration) linear;
+}
+
+/* 蒙版盖在图之上，界面之下 */
+#skin-studio-art > .skin-wash {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: var(--skin-wash);
+}
+
+/* ── 把 dsh 的色板换成本皮肤的强调色 ─────────────────────────────
+   发送按钮等品牌元素取自 deepseek-400，整条色阶一起换，深浅关系不乱。 */
+body,
+body[data-ds-dark-theme] {
+  --dsw-static-deepseek-50: color-mix(in srgb, var(--skin-accent) 18%, white);
+  --dsw-static-deepseek-100: color-mix(in srgb, var(--skin-accent) 28%, white);
+  --dsw-static-deepseek-200: color-mix(in srgb, var(--skin-accent) 42%, white);
+  --dsw-static-deepseek-300: color-mix(in srgb, var(--skin-accent) 62%, white);
+  --dsw-static-deepseek-400: var(--skin-accent);
+  --dsw-static-deepseek-450: color-mix(in srgb, var(--skin-accent) 94%, black);
+  --dsw-static-deepseek-500: color-mix(in srgb, var(--skin-accent) 84%, black);
+  --dsw-static-deepseek-600: color-mix(in srgb, var(--skin-accent) 70%, black);
+  --dsw-static-deepseek-700-delete: color-mix(in srgb, var(--skin-accent) 54%, black);
+  --dsw-static-deepseek-800: color-mix(in srgb, var(--skin-accent) 26%, var(--skin-bg));
+  --dsw-static-deepseek-900: color-mix(in srgb, var(--skin-accent) 16%, var(--skin-bg));
+}
+
+/* ── 语义层 ─────────────────────────────────────────────────────
+   表面全部带 alpha，背景图才透得上来；--skin-transparency 越大越透。
+   选择器同时列出 body 与 body[data-ds-dark-theme]：dsh 自己的暗色规则用的是
+   后者（特异性 0,1,1），只写 body 会在暗色下被它压过。 */
+body,
+body[data-ds-dark-theme] {
+  --dsw-alias-bg-base: transparent;
+  --dsw-alias-bg-layer-1: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 26%), transparent);
+  --dsw-alias-bg-layer-2: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 20%), transparent);
+  --dsw-alias-bg-layer-3: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 12%), transparent);
+  --dsw-alias-bg-overlay: color-mix(in srgb, var(--skin-text) 14%, var(--skin-bg));
+  --dsw-alias-bg-skeleton: color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg));
+  --dsw-alias-bg-multi-select: color-mix(in srgb, var(--skin-accent) 16%, transparent);
+  --dsw-alias-bg-module-platform: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 22%), transparent);
+  --dsw-alias-bg-mask-1: color-mix(in srgb, var(--skin-bg) 72%, transparent);
+  --dsw-alias-bg-mask-2: color-mix(in srgb, var(--skin-bg) 58%, transparent);
+  --dsw-alias-bg-mask-3: color-mix(in srgb, var(--skin-bg) 40%, transparent);
+  --dsw-alias-bg-mask-drop: color-mix(in srgb, var(--skin-accent) 14%, transparent);
+
+  /* 组件级变量：dsh 的侧栏、输入框、气泡等不走 alias 层，单独给它们同一套处理。
+     承载文字越多的表面越实：侧栏与输入框只让出一点，背景图才不会盖过内容。 */
+  --dsw-specific-sidebar-fill: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 3%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 42%), transparent);
+  --dsw-specific-input-major: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 8%), transparent);
+  --dsw-specific-login-input: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 10%), transparent);
+  --dsw-specific-selector: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 7%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 10%), transparent);
+  --dsw-specific-tip: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 7%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 12%), transparent);
+  --dsw-hovercard-bg: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 8%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 8%), transparent);
+  /* 用户消息气泡与侧栏选中项走强调色，皮肤的主色才立得住 */
+  --dsw-specific-bubble: color-mix(in srgb, var(--skin-accent) 14%, var(--skin-bg));
+  --dsw-specific-bubble-highlight: color-mix(in srgb, var(--skin-accent) 26%, var(--skin-bg));
+  --dsw-specific-sidebar-nav-item-active: color-mix(in srgb, var(--skin-accent) 16%, transparent);
+  --dsw-specific-sidebar-nav-item-active-accent: color-mix(in srgb, var(--skin-accent) 24%, transparent);
+  --dsw-specific-sidebar-nav-item-hover: color-mix(in srgb, var(--skin-text) 7%, transparent);
+
+  --dsw-alias-label-primary: var(--skin-text);
+  --dsw-alias-label-primary-bluish: var(--skin-text);
+  --dsw-alias-label-primary-dimmed: color-mix(in srgb, var(--skin-text) 62%, transparent);
+  --dsw-alias-label-primary-foreground: var(--skin-text);
+  --dsw-alias-label-primary-inverted: var(--skin-accent-ink);
+  --dsw-alias-label-secondary: color-mix(in srgb, var(--skin-text) 78%, var(--skin-bg));
+  --dsw-alias-label-tertiary: var(--skin-muted);
+  --dsw-alias-label-caption: color-mix(in srgb, var(--skin-muted) 82%, var(--skin-bg));
+  --dsw-alias-label-dimmed: color-mix(in srgb, var(--skin-muted) 64%, var(--skin-bg));
+
+  --dsw-alias-brand-primary: var(--skin-accent);
+  --dsw-alias-brand-primary-invert: var(--skin-accent-ink);
+  --dsw-alias-brand-text: var(--skin-accent);
+  --dsw-alias-brand-primary-new-colorprimary-new-color: var(--skin-accent);
+
+  --dsw-alias-border-l1: color-mix(in srgb, var(--skin-text) 7%, transparent);
+  --dsw-alias-border-l2: color-mix(in srgb, var(--skin-text) 12%, transparent);
+  --dsw-alias-border-l2-darkmode-thin: color-mix(in srgb, var(--skin-text) 10%, transparent);
+  --dsw-alias-border-l3: color-mix(in srgb, var(--skin-text) 18%, transparent);
+  --dsw-alias-border-l4: color-mix(in srgb, var(--skin-text) 26%, transparent);
+  --dsw-alias-border-inverted: color-mix(in srgb, var(--skin-accent-ink) 20%, transparent);
+  --dsw-alias-border-inverted2: color-mix(in srgb, var(--skin-accent-ink) 32%, transparent);
+
+  --dsw-alias-button-primary-fill: var(--skin-accent);
+  --dsw-alias-button-primary-hover: color-mix(in srgb, var(--skin-accent) 80%, white);
+  --dsw-alias-button-primary-dimmed: color-mix(in srgb, var(--skin-accent) 42%, transparent);
+  --dsw-alias-button-contrast-fill: var(--skin-text);
+  --dsw-alias-button-elevated-fill: color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg));
+  --dsw-alias-button-floating-fill: color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg));
+  --dsw-alias-button-floating-hover: color-mix(in srgb, var(--skin-text) 11%, var(--skin-bg));
+  --dsw-alias-button-ghost-active-fill: color-mix(in srgb, var(--skin-accent) 16%, transparent);
+  --dsw-alias-button-ghost-active-hover: color-mix(in srgb, var(--skin-accent) 22%, transparent);
+  --dsw-alias-button-ghost-active-border: color-mix(in srgb, var(--skin-accent) 45%, transparent);
+  --dsw-alias-button-info-fill: var(--skin-accent);
+  --dsw-alias-button-info-hover: color-mix(in srgb, var(--skin-accent) 84%, black);
+  --dsw-alias-button-tool-bar-fill: color-mix(in srgb, var(--skin-text) 6%, transparent);
+  --dsw-alias-button-tool-bar-fill-invisible: transparent;
+  --dsw-alias-button-tool-bar-hover: color-mix(in srgb, var(--skin-text) 10%, transparent);
+
+  --dsw-alias-interactive-bg-hover: color-mix(in srgb, var(--skin-text) 7%, transparent);
+  --dsw-alias-interactive-bg-hover-solid: color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg));
+  --dsw-alias-interactive-bg-hover-accent: color-mix(in srgb, var(--skin-accent) 18%, transparent);
+  --dsw-alias-interactive-bg-hover-danger: rgba(229, 115, 90, 0.16);
+  --dsw-alias-interactive-bg-active: color-mix(in srgb, var(--skin-accent) 16%, transparent);
+
+  --dsw-alias-markdown-inline-code: color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg));
+  --dsw-alias-markdown-code-block: color-mix(in srgb, var(--skin-bg) 88%, transparent);
+  --dsw-alias-markdown-code-block-banner: color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg));
+  --dsw-alias-markdown-code-segment-selected: color-mix(in srgb, var(--skin-accent) 18%, transparent);
+  --dsw-alias-markdown-code-segment-unselected: transparent;
+  --dsw-alias-markdown-citation: var(--skin-accent);
+  --dsw-alias-markdown-tag: color-mix(in srgb, var(--skin-accent) 16%, transparent);
+  --dsw-alias-markdown-placeholder: var(--skin-muted);
+
+  --dsw-alias-state-error-primary: #e5735a;
+  --dsw-alias-state-error-secondary: rgba(229, 115, 90, 0.16);
+  --dsw-alias-state-success-primary: #7fb87a;
+  --dsw-alias-state-success-secondary: rgba(127, 184, 122, 0.16);
+  --dsw-alias-state-success-tertiary: rgba(127, 184, 122, 0.1);
+  --dsw-alias-state-warn-primary: #d9a441;
+  --dsw-alias-state-warn-secondary: rgba(217, 164, 65, 0.16);
+  --dsw-alias-state-warn-tertiary: rgba(217, 164, 65, 0.1);
+  --dsw-alias-state-warn-label: #d9a441;
+  --dsw-alias-state-business-primary: var(--skin-accent);
+  --dsw-alias-state-business-tertiary: color-mix(in srgb, var(--skin-accent) 14%, transparent);
+
+  --dsw-alias-tooltip-bg: color-mix(in srgb, var(--skin-text) 14%, var(--skin-bg));
+  --dsw-alias-toast-bg: color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg));
+
+  --dsw-alias-scrollbar-bg-l1: color-mix(in srgb, var(--skin-accent) 22%, transparent);
+  --dsw-alias-scrollbar-bg-l2: color-mix(in srgb, var(--skin-accent) 22%, transparent);
+  --dsw-alias-scrollbar-hover-l1: color-mix(in srgb, var(--skin-accent) 40%, transparent);
+  --dsw-alias-scrollbar-hover-l2: color-mix(in srgb, var(--skin-accent) 40%, transparent);
+  --dsh-scrollbar-thumb: color-mix(in srgb, var(--skin-accent) 24%, transparent);
+  --dsh-scrollbar-thumb-hover: color-mix(in srgb, var(--skin-accent) 42%, transparent);
+}
+
+/*
+ * 给系统窗口控件让位。
+ *
+ * 选择器用 dsh 侧栏那个 CSS Modules 类（哈希前缀会变，`sidebarCol` 后缀稳定）。
+ * 这是本文件唯一一处结构选择器：匹配不上时只是不让位，界面不会坏。
+ */
+[class*="sidebarCol"] {
+  padding-top: var(--skin-window-controls);
+}
+
+/* ── 观感细节 ───────────────────────────────────────────────────── */
+html.skin-studio * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--dsh-scrollbar-thumb, transparent) transparent;
+}
+
+html.skin-studio ::selection {
+  background: color-mix(in srgb, var(--skin-accent) 24%, transparent);
+}

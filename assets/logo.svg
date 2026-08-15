@@ -1,0 +1,15 @@
+<!--
+  DSH Desktop 标识。
+
+  含义：命令行被装进一个窗口——圆角方是桌面壳，负空间里的 > 是提示符，
+  末尾的圆点是运行中的内核（而不是终端图标常见的下划线光标，以示区别）。
+
+  几何以 64 栅格定义，所有尺寸由它缩放派生，见 scripts/make-icons.mjs。
+  换整套标识只需替换本文件与 logo-mono.svg。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect x="7" y="7" width="50" height="50" rx="15" fill="#d3aa61"/>
+  <path d="M22 22.5 32 32 22 41.5" fill="none" stroke="#171817" stroke-width="6"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="42.5" cy="41.5" r="4.5" fill="#171817"/>
+</svg>

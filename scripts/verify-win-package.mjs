@@ -1,0 +1,28 @@
+/** Windows 打包后的关键资源完整性检查。 */
+
+import { existsSync, statSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+
+const ROOT = resolve(import.meta.dirname, '..')
+const unpacked = join(ROOT, 'release', 'win-unpacked')
+const required = [
+  'DSH Desktop.exe',
+  'resources/app.asar',
+  'resources/node/node.exe',
+  'resources/node/node_modules/npm/bin/npm-cli.js',
+  'resources/node/node_modules/corepack/dist/corepack.js',
+  'resources/seed/runtime.tar.gz',
+  'resources/seed/seed.json',
+]
+
+const missing = required.filter((relative) => {
+  const file = join(unpacked, relative)
+  return !existsSync(file) || statSync(file).size === 0
+})
+
+if (missing.length > 0) {
+  console.error(`Windows 包缺少关键资源：\n${missing.join('\n')}`)
+  process.exit(1)
+}
+
+console.log('Windows 包关键资源检查通过（Node、npm、corepack、种子运行时均完整）。')

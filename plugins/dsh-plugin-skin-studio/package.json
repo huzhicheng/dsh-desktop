@@ -1,0 +1,48 @@
+{
+  "name": "dsh-plugin-skin-studio",
+  "description": "DeepSeek Harness 皮肤插件：可换背景图、可调透明度与配色",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  }
+}

@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>飞书桥接设置</title>
+  <style>
+    /* 与壳其余部分同源的 Moli 皮肤：暖中性底 + 金褐强调色 */
+    :root {
+      color-scheme: dark;
+      --fg: #f3f2ed;
+      --muted: #aaa9a2;
+      --bg: #171817;
+      --panel: #1f201e;
+      --line: #2e2f2c;
+      --accent: #d3aa61;
+      --accent-ink: #201a10;
+      --danger: #e5735a;
+      --ok: #7fb069;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --fg: #201f1c; --muted: #6f6d64; --bg: #f6f5f1; --panel: #fff;
+        --line: #e3e1da; --accent: #a8763a; --accent-ink: #fffaf0;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--bg); color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 13px; line-height: 1.6;
+      display: flex; flex-direction: column;
+    }
+    header {
+      padding: 14px 20px; border-bottom: 1px solid var(--line);
+      display: flex; align-items: center; gap: 10px;
+      -webkit-app-region: drag;
+    }
+    header .title { font-weight: 600; font-size: 14px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+    .dot.connected { background: var(--ok); }
+    .dot.error { background: var(--danger); }
+    .dot.starting { background: var(--accent); }
+    #stateText { color: var(--muted); font-size: 12px; }
+    main { flex: 1; overflow: auto; padding: 18px 20px 24px; }
+    section { margin-bottom: 22px; }
+    h2 {
+      font-size: 12px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--muted); margin: 0 0 10px;
+    }
+    .field { margin-bottom: 12px; }
+    label { display: block; margin-bottom: 4px; font-size: 12px; }
+    .hint { color: var(--muted); font-size: 11px; margin-top: 4px; }
+    input[type="text"], input[type="password"], textarea, select {
+      width: 100%; padding: 7px 9px; border-radius: 7px;
+      border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+      font-family: inherit; font-size: 12px;
+    }
+    textarea { min-height: 66px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    input:focus, textarea:focus, select:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .row input[type="text"] { flex: 1; }
+    button {
+      padding: 6px 12px; border-radius: 7px; border: 1px solid var(--line);
+      background: var(--panel); color: var(--fg); font-family: inherit; font-size: 12px; cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+    button.ghost { background: transparent; }
+    .workspace { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+    .workspace input.name { width: 130px; flex: none; }
+    .switch { display: flex; align-items: center; gap: 8px; }
+    footer {
+      padding: 12px 20px; border-top: 1px solid var(--line);
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    #saveHint { color: var(--muted); font-size: 12px; }
+    #saveHint.error { color: var(--danger); }
+    .warn {
+      border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line));
+      background: color-mix(in srgb, var(--danger) 8%, transparent);
+      border-radius: 8px; padding: 9px 11px; font-size: 12px; color: var(--fg);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="dot" id="dot"></div>
+    <div class="title">飞书桥接</div>
+    <div id="stateText">未启动</div>
+  </header>
+
+  <main>
+    <section>
+      <h2>连接</h2>
+      <div class="field switch">
+        <input type="checkbox" id="enabled">
+        <label for="enabled" style="margin:0">启用飞书桥接</label>
+      </div>
+      <div class="field">
+        <label for="appId">App ID</label>
+        <input type="text" id="appId" placeholder="cli_xxxxxxxxxxxx" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="appSecret">App Secret</label>
+        <input type="password" id="appSecret" placeholder="留空表示不修改" spellcheck="false">
+        <div class="hint" id="secretHint"></div>
+      </div>
+      <div class="field">
+        <label for="domain">版本</label>
+        <select id="domain">
+          <option value="feishu">飞书（国内）</option>
+          <option value="lark">Lark（国际）</option>
+        </select>
+        <div class="hint">走 WebSocket 长连接，不需要公网地址或内网穿透。应用需开启机器人能力，并订阅「接收消息」事件与「卡片回调」。</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>谁可以用</h2>
+      <div class="field">
+        <label for="allowedUsers">飞书用户 open_id 白名单（每行一个）</label>
+        <textarea id="allowedUsers" placeholder="ou_xxxxxxxxxxxxxxxx" spellcheck="false"></textarea>
+        <div class="hint">只有这里列出的人能驱动 agent，群里也一样。留空则谁都不能用。</div>
+      </div>
+      <div class="warn">
+        能给这个机器人发消息的人，等于能在这台电脑上执行命令。白名单请只放你自己和确实信任的人。
+      </div>
+    </section>
+
+    <section>
+      <h2>工作目录</h2>
+      <div id="workspaces"></div>
+      <button id="addWorkspace" class="ghost">+ 添加目录</button>
+      <div class="field" style="margin-top:12px">
+        <label for="defaultWorkspace">新会话默认使用</label>
+        <select id="defaultWorkspace"></select>
+        <div class="hint">聊天里用 <code>/cd 名称</code> 切换，<code>/ls</code> 查看列表。agent 只在这些目录里活动。</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>权限</h2>
+      <div class="field">
+        <select id="permissionMode">
+          <option value="read-only">只读：任何写入都发卡片问你（推荐）</option>
+          <option value="workspace-write">工作目录内可写：越界写入才问你</option>
+          <option value="danger-full-access">完全放行：什么都不问</option>
+        </select>
+        <div class="hint">
+          审批卡片会显示 agent 要执行的具体命令和它给出的理由，可以选「允许一次」「本会话内都允许」或「拒绝」。
+          注意 macOS 上「工作目录内可写」的越界拦截并不可靠，真要拦住请用只读。
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div id="saveHint"></div>
+    <button class="primary" id="save">保存并重启桥接</button>
+  </footer>
+
+  <script>
+    const api = window.bridgeSettings
+    const $ = (id) => document.getElementById(id)
+    let workspaces = []
+
+    function renderWorkspaces() {
+      const container = $('workspaces')
+      container.innerHTML = ''
+      workspaces.forEach((entry, index) => {
+        const row = document.createElement('div')
+        row.className = 'workspace'
+        const name = document.createElement('input')
+        name.type = 'text'
+        name.className = 'name'
+        name.placeholder = '短名'
+        name.value = entry.name
+        name.oninput = () => { workspaces[index].name = name.value; renderDefaults() }
+        const path = document.createElement('input')
+        path.type = 'text'
+        path.placeholder = '/绝对/路径'
+        path.value = entry.path
+        path.oninput = () => { workspaces[index].path = path.value }
+        const browse = document.createElement('button')
+        browse.textContent = '选择…'
+        browse.onclick = async () => {
+          const picked = await api.pickDirectory()
+          if (picked) {
+            workspaces[index].path = picked
+            if (!workspaces[index].name) workspaces[index].name = picked.split('/').filter(Boolean).pop() ?? ''
+            renderWorkspaces()
+            renderDefaults()
+          }
+        }
+        const remove = document.createElement('button')
+        remove.textContent = '删除'
+        remove.onclick = () => { workspaces.splice(index, 1); renderWorkspaces(); renderDefaults() }
+        row.append(name, path, browse, remove)
+        container.append(row)
+      })
+    }
+
+    function renderDefaults() {
+      const select = $('defaultWorkspace')
+      const previous = select.value
+      select.innerHTML = '<option value="">（不设默认）</option>'
+      for (const entry of workspaces) {
+        if (!entry.name) continue
+        const option = document.createElement('option')
+        option.value = entry.name
+        option.textContent = entry.name
+        select.append(option)
+      }
+      select.value = previous
+    }
+
+    function applyStatus(status) {
+      const dot = $('dot')
+      dot.className = 'dot ' + (status.state ?? '')
+      const labels = { connected: '已连接', starting: '连接中…', error: '异常', stopped: '未启动' }
+      $('stateText').textContent = (labels[status.state] ?? status.state) + (status.message ? '：' + status.message : '')
+    }
+
+    async function init() {
+      const config = await api.load()
+      $('enabled').checked = config.feishu.enabled
+      $('appId').value = config.feishu.appId ?? ''
+      $('domain').value = config.feishu.domain ?? 'feishu'
+      $('secretHint').textContent = config.hasSecret ? '已保存，留空则沿用' : '尚未设置'
+      $('allowedUsers').value = (config.allowedUserIds ?? []).join('\n')
+      $('permissionMode').value = config.permissionMode ?? 'read-only'
+      workspaces = (config.workspaces ?? []).map((entry) => ({ ...entry }))
+      renderWorkspaces()
+      renderDefaults()
+      $('defaultWorkspace').value = config.defaultWorkspace ?? ''
+      applyStatus(await api.status())
+    }
+
+    $('addWorkspace').onclick = () => { workspaces.push({ name: '', path: '' }); renderWorkspaces() }
+
+    $('save').onclick = async () => {
+      const hint = $('saveHint')
+      hint.className = ''
+      hint.textContent = '保存中…'
+      const payload = {
+        feishu: {
+          enabled: $('enabled').checked,
+          appId: $('appId').value.trim(),
+          appSecret: $('appSecret').value,
+          domain: $('domain').value,
+        },
+        allowedUserIds: $('allowedUsers').value.split('\n').map((line) => line.trim()).filter(Boolean),
+        workspaces: workspaces.filter((entry) => entry.name.trim() && entry.path.trim()),
+        defaultWorkspace: $('defaultWorkspace').value || undefined,
+        permissionMode: $('permissionMode').value,
+      }
+      const result = await api.save(payload)
+      if (result?.error) {
+        hint.className = 'error'
+        hint.textContent = result.error
+        return
+      }
+      $('appSecret').value = ''
+      $('secretHint').textContent = '已保存，留空则沿用'
+      hint.textContent = '已保存'
+      setTimeout(() => { hint.textContent = '' }, 2500)
+    }
+
+    api.onStatus(applyStatus)
+    init()
+  </script>
+</body>
+</html>

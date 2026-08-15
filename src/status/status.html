@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>DSH Desktop</title>
+  <style>
+    /* 与壳其余部分同源的 Moli 皮肤：暖中性底 + 金褐强调色 */
+    :root {
+      color-scheme: dark;
+      --fg: #f3f2ed;
+      --muted: #aaa9a2;
+      --bg: #171817;
+      --accent: #d3aa61;
+      --accent-ink: #201a10;
+    }
+    @media (prefers-color-scheme: light) {
+      :root { --fg: #201f1c; --muted: #6f6d64; --bg: #f6f5f1; --accent: #a8763a; --accent-ink: #fffaf0; }
+    }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      -webkit-app-region: drag;
+      box-sizing: border-box;
+      padding: 24px;
+      text-align: center;
+    }
+    .logo {
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--accent-ink); font-weight: 700; font-size: 18px;
+      letter-spacing: 0.5px;
+    }
+    .title { font-size: 15px; font-weight: 600; }
+    .message { font-size: 13px; color: var(--muted); min-height: 18px; max-width: 360px; }
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.9s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+    }
+    .error .spinner { display: none; }
+    .error .message { color: #e5735a; white-space: pre-wrap; max-height: 90px; overflow: auto; -webkit-app-region: no-drag; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="logo">DS</div>
+  <div class="title">DSH Desktop</div>
+  <div class="spinner"></div>
+  <div class="message" id="message">正在启动…</div>
+  <script>
+    const messageElement = document.getElementById('message')
+    window.desktopStatus?.onUpdate((update) => {
+      if (update.stage === 'error') {
+        document.body.classList.add('error')
+        messageElement.textContent = update.message + (update.error ? '\n' + update.error : '')
+      } else {
+        messageElement.textContent = update.message
+      }
+    })
+  </script>
+</body>
+</html>

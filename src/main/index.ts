@@ -1,0 +1,300 @@
+/**
+ * 应用入口：单实例、启动流程编排、macOS 生命周期。
+ *
+ * 启动流程：准备运行环境（首启解压种子）→ 启动 Harness 服务 →
+ * 主窗口加载本地 Web UI → 常驻托盘 → 定时在线升级。
+ */
+
+import { app, dialog, ipcMain, shell } from 'electron'
+import { ensureAcpProfile } from './acp-profile'
+import { bridgeHasSecret, createBridgeService, readBridgeConfig, writeBridgeConfig } from './bridge-service'
+import { APP_DISPLAY_NAME } from './config'
+import { createHarnessService } from './harness-service'
+import { initLogger, log } from './logger'
+import { assertBundledToolchain, harnessEntry, logsDir } from './paths'
+import { ensurePnpmShim } from './pnpm-shim'
+import { ensureSeedInstalled, readCurrent, rollback } from './runtime-store'
+import { focusWindow, hasWindow, reloadHarness, showShellWindow } from './shell-window'
+import { createTray, destroyTray, refreshTray, type TrayDeps } from './tray'
+import { createHarnessUpdater, type HarnessUpdater } from './updater'
+import {
+  bridgeSettingsWindow, closeStatusWindow, pushBridgeStatus, pushStatus,
+  showBridgeSettings, showStatusWindow,
+} from './windows'
+import type { BridgeConfig } from '../bridge/types'
+
+const service = createHarnessService({
+  onUnexpectedExit: () => { void recoverFromCrash() },
+})
+const bridge = createBridgeService({
+  onStatus: (status) => {
+    pushBridgeStatus(status)
+    if (trayDeps !== undefined) refreshTray(trayDeps)
+  },
+})
+let updater: HarnessUpdater | undefined
+let trayDeps: TrayDeps | undefined
+let quitting = false
+let recovering = false
+
+async function fatal(message: string, detail: string): Promise<never> {
+  log.error(message, detail)
+  pushStatus({ stage: 'error', message, error: detail })
+  const { response } = await dialog.showMessageBox({
+    type: 'error',
+    title: APP_DISPLAY_NAME,
+    message,
+    detail,
+    buttons: ['打开日志目录', '退出'],
+    defaultId: 1,
+  })
+  if (response === 0) await shell.openPath(logsDir())
+  quitting = true
+  app.exit(1)
+  throw new Error(message)
+}
+
+/** 服务运行中崩溃：先原版本重启一次，仍失败则提示退出。 */
+async function recoverFromCrash(): Promise<void> {
+  if (quitting || recovering) return
+  recovering = true
+  try {
+    const current = await readCurrent()
+    if (current === undefined) throw new Error('未找到可用的 Harness 运行时')
+    log.warn('尝试自动重启 Harness 服务…')
+    const origin = await service.restart(harnessEntry(current.version))
+    await reloadHarness(origin)
+    log.info('Harness 服务已自动恢复')
+  } catch (error) {
+    await fatal('Harness 服务已停止且自动恢复失败', error instanceof Error ? error.message : String(error))
+  } finally {
+    recovering = false
+  }
+}
+
+/**
+ * 启动服务。固定端口被占用时先换随机端口重试；仍失败才回滚到上一版本。
+ * 固定端口是为了让浏览器端插件的 localStorage 配置在重启后仍能读到。
+ */
+async function startServiceWithFallback(version: string): Promise<string> {
+  try {
+    return await service.start(harnessEntry(version))
+  } catch (portError) {
+    log.warn('固定端口启动失败，改用系统分配的端口重试：',
+      portError instanceof Error ? portError.message : String(portError))
+    pushStatus({ stage: 'starting', message: '固定端口不可用，正在换端口重试…' })
+    try {
+      return await service.start(harnessEntry(version), 0)
+    } catch (error) {
+      log.error(`版本 ${version} 启动失败`, error)
+      const fallback = await rollback(version)
+      if (fallback === undefined) throw error
+      pushStatus({ stage: 'starting', message: `版本 ${version} 启动失败，回退到 ${fallback} …` })
+      return service.start(harnessEntry(fallback), 0)
+    }
+  }
+}
+
+/** 壳自身的自动更新（electron-updater）。未配置发布源时静默跳过。 */
+async function checkShellUpdate(): Promise<void> {
+  if (!app.isPackaged) return
+  try {
+    const { autoUpdater } = await import('electron-updater')
+    autoUpdater.logger = { info: log.info, warn: log.warn, error: log.error, debug: () => {} }
+    await autoUpdater.checkForUpdatesAndNotify()
+  } catch (error) {
+    log.warn('壳更新检查跳过：', error instanceof Error ? error.message : String(error))
+  }
+}
+
+async function boot(): Promise<void> {
+  // Windows 通知与任务栏归组依赖 AppUserModelID（与 electron-builder 的 appId 一致）
+  if (process.platform === 'win32') app.setAppUserModelId('com.moon.dsh-desktop')
+  initLogger(logsDir())
+  log.info(`${APP_DISPLAY_NAME} 启动（app ${app.getVersion()}）`)
+  try {
+    assertBundledToolchain()
+  } catch (error) {
+    await fatal('应用文件不完整', error instanceof Error ? error.message : String(error))
+  }
+
+  showStatusWindow()
+  pushStatus({ stage: 'preparing', message: '正在准备运行环境…' })
+
+  let state
+  try {
+    state = await ensureSeedInstalled()
+  } catch (error) {
+    return fatal('初始化运行环境失败', error instanceof Error ? error.message : String(error))
+  }
+
+  // 先备好 pnpm：Harness 进程要靠它在 Web UI 里安装插件
+  await ensurePnpmShim()
+
+  pushStatus({ stage: 'starting', message: `正在启动 Harness ${state.version} …` })
+  let origin: string
+  try {
+    origin = await startServiceWithFallback(state.version)
+  } catch (error) {
+    return fatal('Harness 服务启动失败', error instanceof Error ? error.message : String(error))
+  }
+
+  updater = createHarnessUpdater({
+    service,
+    onServiceRestarted: (nextOrigin) => { void reloadHarness(nextOrigin) },
+    onPhaseChange: () => { if (trayDeps !== undefined) refreshTray(trayDeps) },
+  })
+
+  trayDeps = {
+    openMainWindow: () => { void openMain() },
+    checkUpdate: () => { void updater?.check({ interactive: true }) },
+    restartService: () => { void restartHarnessService() },
+    openLogs: () => { void shell.openPath(logsDir()) },
+    openBridgeSettings: () => { showBridgeSettings() },
+    quit: () => { void shutdown() },
+    getVersion: () => undefined,
+    getPhase: () => updater?.phase ?? { phase: 'idle' },
+    getBridgeState: () => bridge.status.state,
+  }
+  // getVersion 需要异步读取，用缓存值填充
+  let cachedVersion: string | undefined = state.version
+  trayDeps.getVersion = () => cachedVersion
+  const refreshVersion = async (): Promise<void> => {
+    cachedVersion = (await readCurrent())?.version
+    if (trayDeps !== undefined) refreshTray(trayDeps)
+  }
+  createTray(trayDeps)
+
+  closeStatusWindow()
+  await showShellWindow(origin)
+
+  registerBridgeIpc()
+  // 桥接是可选能力：起不来只记日志，不影响主界面
+  void startBridge(state.version)
+
+  updater.schedule()
+  setTimeout(() => {
+    void updater?.check().then(refreshVersion)
+  }, 20_000)
+  setTimeout(() => { void checkShellUpdate() }, 60_000)
+}
+
+/**
+ * 启动飞书桥接：先把 ACP profile 准备好（装 dsh-acp、同步设置），再拉起进程。
+ * 未启用时什么都不做；失败只记日志，桥接不该影响主界面。
+ */
+async function startBridge(runtimeVersion: string): Promise<void> {
+  const config = readBridgeConfig()
+  if (!config.feishu.enabled) return
+  try {
+    await ensureAcpProfile(runtimeVersion, config.permissionMode)
+    await bridge.start(harnessEntry(runtimeVersion))
+  } catch (error) {
+    log.warn('飞书桥接启动失败：', error instanceof Error ? error.message : String(error))
+  }
+}
+
+/** 设置窗口与主进程之间的通道。 */
+function registerBridgeIpc(): void {
+  ipcMain.handle('bridge:get-config', () => ({ ...readBridgeConfig(), hasSecret: bridgeHasSecret() }))
+
+  ipcMain.handle('bridge:save-config', async (_event, incoming: Partial<BridgeConfig>) => {
+    try {
+      const previous = readBridgeConfig()
+      const next: BridgeConfig = {
+        ...previous,
+        ...incoming,
+        feishu: { ...previous.feishu, ...incoming.feishu },
+      }
+      if (next.feishu.enabled) {
+        if (next.feishu.appId === '') return { error: '请填写 App ID' }
+        if (next.feishu.appSecret === '' && !bridgeHasSecret()) return { error: '请填写 App Secret' }
+        if (next.allowedUserIds.length === 0) return { error: '白名单为空，至少填一个 open_id' }
+      }
+      writeBridgeConfig(next)
+      const current = await readCurrent()
+      if (current === undefined) return { error: '未找到可用的 Harness 运行时' }
+      if (next.feishu.enabled) await ensureAcpProfile(current.version, next.permissionMode)
+      await bridge.restart(harnessEntry(current.version))
+      return { ok: true }
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle('bridge:get-status', () => bridge.status)
+
+  ipcMain.handle('bridge:pick-directory', async () => {
+    const parent = bridgeSettingsWindow()
+    const result = parent === undefined
+      ? await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
+      : await dialog.showOpenDialog(parent, { properties: ['openDirectory', 'createDirectory'] })
+    return result.canceled ? undefined : result.filePaths[0]
+  })
+}
+
+async function openMain(): Promise<void> {
+  const origin = service.origin
+  if (origin !== undefined) {
+    await showShellWindow(origin)
+    return
+  }
+  // 服务不在运行（例如恢复中），把已有窗口带到前台即可
+  if (hasWindow()) focusWindow()
+}
+
+/** 当前启用版本的 Harness 入口，插件命令需要用它。 */
+async function currentHarnessEntry(): Promise<string> {
+  const current = await readCurrent()
+  if (current === undefined) throw new Error('未找到可用的 Harness 运行时')
+  return harnessEntry(current.version)
+}
+
+/** 重启服务并把窗口带到新地址（装完插件后需要重启才生效）。 */
+async function restartHarnessService(): Promise<void> {
+  const entry = await currentHarnessEntry()
+  const origin = await service.restart(entry)
+  await reloadHarness(origin)
+}
+
+async function shutdown(): Promise<void> {
+  if (quitting) return
+  quitting = true
+  destroyTray()
+  try {
+    await bridge.stop()
+  } catch (error) {
+    log.error('停止桥接时出错', error)
+  }
+  try {
+    await service.stop()
+  } catch (error) {
+    log.error('停止服务时出错', error)
+  }
+  app.exit(0)
+}
+
+// 测试/多开隔离：覆盖 userData 后，单实例锁、缓存都随之隔离，
+// 不会与正式安装的实例互相干扰
+if (process.env.DSHD_USER_DATA_DIR !== undefined) {
+  app.setPath('userData', process.env.DSHD_USER_DATA_DIR)
+}
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => { void openMain() })
+  app.on('activate', () => { void openMain() })
+  app.on('window-all-closed', () => {
+    // 服务与托盘常驻；关窗不退出（两个平台都从托盘/程序坞恢复窗口）
+  })
+  app.on('before-quit', (event) => {
+    if (quitting) return
+    event.preventDefault()
+    void shutdown()
+  })
+  app.whenReady().then(boot).catch((error: unknown) => {
+    console.error('启动失败：', error)
+    app.exit(1)
+  })
+}

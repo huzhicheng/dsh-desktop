@@ -1,0 +1,13 @@
+# 把本插件挂进 profile 的配置树。
+#
+# 顶层直接写 `- id: xxx` 是「按 id 修改已有条目」，对新插件会报
+# `patch: entry "xxx" not found`；插入新行必须用 `- insert:` 包起来
+# （见 packages/bundle/web-app/cordis.patch.yml 的同名用法）。
+#
+# 浏览器插件在 dsh 里就是一行普通条目：`@deepseek-ai/dsh-client-modules` 会扫描
+# Loader 的条目，凡是 package.json 里声明了 `dsh.client` 且导出 "./client" 的包，
+# 都会被编进 window.__DSH_BOOT__，并通过 /plugins/<包名>/client.js 提供给浏览器。
+
+- insert:
+    - id: skin-studio
+      name: dsh-plugin-skin-studio

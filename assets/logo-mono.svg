@@ -1,0 +1,10 @@
+<!--
+  单色字形：给 macOS 菜单栏模板图用。
+  模板图必须是「黑色 + 透明」，系统据此自动适配深浅色菜单栏，
+  所以这里不画底板，只留提示符本身。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <path d="M18 18 32 32 18 46" fill="none" stroke="#000" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="45" cy="46" r="5.5" fill="#000"/>
+</svg>

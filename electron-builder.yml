@@ -1,0 +1,76 @@
+# 打包配置：macOS（arm64）+ Windows 11（x64）。
+# 签名/公证：配好证书后删掉 mac.identity: null；Windows 代码签名见 README。
+appId: com.moon.dsh-desktop
+productName: DSH Desktop
+directories:
+  output: release
+
+files:
+  - dist/**
+  - package.json
+
+npmRebuild: false
+
+mac:
+  category: public.app-category.developer-tools
+  identity: null
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  extraResources:
+    # 官方 Node.js 运行时（用户因此无需安装 Node）
+    - from: vendor/node/darwin-arm64
+      to: node
+      filter:
+        - "**/*"
+        - "!include/**"
+        - "!share/**"
+        - "!lib/node_modules/npm/docs/**"
+        - "!lib/node_modules/npm/man/**"
+    # 种子版 Harness 运行时（首启解压，之后走应用内在线升级）
+    - from: vendor/seed/darwin-arm64
+      to: seed
+
+win:
+  # nsis 只能在 Windows（或装了 Wine 的机器）上构建，否则卸载器会是坏的，
+  # scripts/check-win-build.mjs 会拦截；zip 为免安装版，任何平台都能出。
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+  extraResources:
+    - from: vendor/node/win32-x64
+      to: node
+    # Windows 发行包的 npm 在根级 node_modules 下，electron-builder 会默认忽略
+    # 根级 node_modules，单独一条规则直接拷到目标位置绕开该行为
+    - from: vendor/node/win32-x64/node_modules/npm
+      to: node/node_modules/npm
+      filter:
+        - "**/*"
+        - "!docs/**"
+        - "!man/**"
+    # corepack 与 npm 一样位于根级 node_modules，也会被 electron-builder
+    # 默认忽略；Harness 的插件命令依赖它提供 pnpm。
+    - from: vendor/node/win32-x64/node_modules/corepack
+      to: node/node_modules/corepack
+      filter:
+        - "**/*"
+    - from: vendor/seed/win32-x64
+      to: seed
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  deleteAppDataOnUninstall: false
+  shortcutName: DSH Desktop
+
+# 壳自身在线升级的发布源：有 GitHub 仓库后取消注释并填写，
+# 然后用 electron-builder --publish always 发布即可让 electron-updater 生效。
+# publish:
+#   provider: github
+#   owner: <你的 GitHub 用户名>
+#   repo: <发布仓库名>
