@@ -39,6 +39,15 @@ export interface SkinConfig {
   transparency: number
   /** 蒙版强度 0~1：盖在背景图之上压暗它，越大界面越清晰、图越淡。 */
   wash: number
+  /** 字体栈（CSS font-family 的值）；空字符串表示跟随 Harness 原生字体。 */
+  fontFamily: string
+  /**
+   * 文字对比 0~1。
+   *
+   * 做两件事：把次级、三级文字往主文字色拉；给文字加一层与底色同色的光晕，
+   * 把身后透上来的背景图压住。界面越透，这项越需要往上调。
+   */
+  textContrast: number
 }
 
 export const DEFAULT_CONFIG: SkinConfig = {
@@ -54,6 +63,8 @@ export const DEFAULT_CONFIG: SkinConfig = {
   imageBlur: 0,
   transparency: 0.8,
   wash: 0.58,
+  fontFamily: '',
+  textContrast: 0.6,
 }
 
 /** 内置预设，用户不选图也能一键换个样子。 */
@@ -82,6 +93,31 @@ export const BACKGROUND_LEVELS: readonly SkinPreset[] = [
   { id: 'soft', name: '淡雅', patch: { imageOpacity: 0.4, wash: 0.62, transparency: 0.5 } },
   { id: 'medium', name: '适中', patch: { imageOpacity: 0.68, wash: 0.4, transparency: 0.75 } },
   { id: 'clear', name: '清晰', patch: { imageOpacity: 1, wash: 0.12, transparency: 1 } },
+]
+
+/** 可选字体。stack 为空表示不覆盖，沿用 Harness 自己的字体栈。 */
+export interface FontOption {
+  id: string
+  name: string
+  stack: string
+}
+
+/**
+ * 候选字体。
+ *
+ * 只列各平台自带或中文用户常见的，且都给出同族回退。装没装由界面实测决定，
+ * 没装的不显示——列一堆选了没反应的选项只会让人以为功能坏了。
+ */
+export const FONTS: readonly FontOption[] = [
+  { id: 'default', name: '跟随 Harness（默认）', stack: '' },
+  { id: 'pingfang', name: '苹方', stack: '"PingFang SC", "PingFang TC", sans-serif' },
+  { id: 'noto', name: '思源黑体', stack: '"Noto Sans SC", "Source Han Sans SC", sans-serif' },
+  { id: 'yahei', name: '微软雅黑', stack: '"Microsoft YaHei", sans-serif' },
+  { id: 'hiragino', name: '冬青黑体', stack: '"Hiragino Sans GB", sans-serif' },
+  { id: 'wenkai', name: '霞鹜文楷', stack: '"LXGW WenKai", "LXGW WenKai GB", sans-serif' },
+  { id: 'songti', name: '宋体', stack: '"Songti SC", "STSong", serif' },
+  { id: 'kaiti', name: '楷体', stack: '"Kaiti SC", "STKaiti", serif' },
+  { id: 'mono', name: '等宽', stack: '"SF Mono", Menlo, Consolas, monospace' },
 ]
 
 /** 适配方式的合法取值，兼作界面上的选项来源。 */
@@ -122,5 +158,10 @@ export function normalizeConfig(raw: unknown): SkinConfig {
     imageBlur: clamp(input.imageBlur, 0, 40, DEFAULT_CONFIG.imageBlur),
     transparency: clamp(input.transparency, 0, 1, DEFAULT_CONFIG.transparency),
     wash: clamp(input.wash, 0, 1, DEFAULT_CONFIG.wash),
+    // 这个值会被写进 CSS 变量，限定字符集挡掉借它注入样式的可能
+    fontFamily: typeof input.fontFamily === 'string' && /^[\w\s"',\-]{0,160}$/.test(input.fontFamily)
+      ? input.fontFamily.trim()
+      : '',
+    textContrast: clamp(input.textContrast, 0, 1, DEFAULT_CONFIG.textContrast),
   }
 }

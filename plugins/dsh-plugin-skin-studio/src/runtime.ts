@@ -85,14 +85,36 @@ function isDark(): boolean {
   return document.body.hasAttribute(DARK_ATTR)
 }
 
-/** 把 wash 强度换算成盖在背景图上的颜色，明暗各取自己的底色。 */
-function washColor(config: SkinConfig, dark: boolean): string {
+/** 取当前明暗下的底色，拆成 rgb 分量。 */
+function bgChannels(config: SkinConfig, dark: boolean): [number, number, number] {
   const hex = (dark ? config.bgDark : config.bgLight).replace('#', '')
   const full = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex.slice(0, 6)
-  const r = Number.parseInt(full.slice(0, 2), 16)
-  const g = Number.parseInt(full.slice(2, 4), 16)
-  const b = Number.parseInt(full.slice(4, 6), 16)
+  return [
+    Number.parseInt(full.slice(0, 2), 16),
+    Number.parseInt(full.slice(2, 4), 16),
+    Number.parseInt(full.slice(4, 6), 16),
+  ]
+}
+
+/** 把 wash 强度换算成盖在背景图上的颜色，明暗各取自己的底色。 */
+function washColor(config: SkinConfig, dark: boolean): string {
+  const [r, g, b] = bgChannels(config, dark)
   return `rgba(${r}, ${g}, ${b}, ${config.wash.toFixed(3)})`
+}
+
+/**
+ * 文字光晕。
+ *
+ * 用底色而不是黑色：暗色主题下要的是暗色晕、浅色主题下要的是浅色晕，
+ * 跟着底色走两边都成立，不必写两套。叠两层——一层紧贴字形补足边缘，
+ * 一层散开压住背后的花纹。
+ */
+function textHalo(config: SkinConfig, dark: boolean): string {
+  if (config.textContrast <= 0) return 'none'
+  const [r, g, b] = bgChannels(config, dark)
+  const near = (config.textContrast * 0.55).toFixed(3)
+  const far = (config.textContrast * 0.4).toFixed(3)
+  return `0 0 1px rgba(${r}, ${g}, ${b}, ${near}), 0 1px 3px rgba(${r}, ${g}, ${b}, ${far})`
 }
 
 /**
@@ -209,6 +231,21 @@ export function createSkinRuntime(css: string): SkinRuntime {
     style.setProperty('--skin-image-blur', `${String(current.imageBlur)}px`)
     style.setProperty('--skin-transparency', String(current.transparency))
     style.setProperty('--skin-wash', washColor(current, dark))
+
+    // 字体：dsh 各处的字体都是从 body 继承下来的（实测取样一致），
+    // 覆盖 body 一处就够，不必给每个组件加 !important。
+    if (current.fontFamily === '') {
+      style.removeProperty('--skin-font')
+      delete root.dataset.skinFont
+    } else {
+      style.setProperty('--skin-font', current.fontFamily)
+      root.dataset.skinFont = 'on'
+    }
+
+    // 文字对比：颜色往主色拉之外，再给一层与底色同色的光晕。
+    // 界面透出背景图后，纯靠颜色压不住身后的花纹，光晕能把字从图里拎出来。
+    style.setProperty('--skin-contrast', String(current.textContrast))
+    style.setProperty('--skin-text-halo', textHalo(current, dark))
     // 垫底的放大模糊层：
     // 「完整显示」时四周会留白，这层得够明显才不会露出一片空底；
     // 「填满窗口」时它只在边缘露一点，浅浅垫着即可；没有背景就整层关掉，省一次合成。
@@ -258,10 +295,12 @@ export function createSkinRuntime(css: string): SkinRuntime {
       root.classList.remove('skin-studio')
       delete root.dataset.skinMode
       delete root.dataset.skinBg
+      delete root.dataset.skinFont
       for (const name of [
         '--skin-accent', '--skin-bg', '--skin-image', '--skin-image-opacity',
         '--skin-image-blur', '--skin-transparency', '--skin-wash', '--skin-backdrop-opacity',
         '--skin-image-size', '--skin-image-repeat', '--skin-video-fit', '--skin-backdrop-image',
+        '--skin-font', '--skin-contrast', '--skin-text-halo',
       ]) {
         root.style.removeProperty(name)
       }

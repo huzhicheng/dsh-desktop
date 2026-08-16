@@ -6,7 +6,7 @@
  */
 
 import {
-  BACKGROUND_LEVELS, DEFAULT_CONFIG, FIT_LABELS, FITS, PRESETS, type SkinConfig,
+  BACKGROUND_LEVELS, DEFAULT_CONFIG, FIT_LABELS, FITS, FONTS, PRESETS, type SkinConfig,
 } from './config'
 import { imageToDataUri } from './runtime'
 import { getVideo, putVideo, pruneVideos } from './video-store'
@@ -68,6 +68,37 @@ const CSS = `
 .ss-level-label { flex: 0 0 84px; color: var(--dsw-alias-label-secondary, inherit); }
 `
 
+/**
+ * 判断某个字体在本机是否真的装了。
+ *
+ * 不能用 document.fonts.check()——没装的字体它同样返回 true（只要有回退字体
+ * 能渲染就算通过），实测 15 个候选全部返回 true，等于没过滤。
+ *
+ * 可靠做法是量宽度：先用通用字体量一遍基准，再把目标字体放在它前面量一遍。
+ * 字体没装就会落到同一个回退字体上、宽度分毫不差；装了则几乎必然不同。
+ * 三种基准都试，避开目标字体恰好与某个通用字体等宽的巧合。
+ */
+function fontInstalled(stack: string): boolean {
+  const context = document.createElement('canvas').getContext('2d')
+  if (context === null) return true
+  // 汉字与西文各取一些，笔画宽度差异越大越不容易撞车
+  const probe = '中文字体AaBbGg018'
+
+  const single = (name: string): boolean =>
+    ['monospace', 'serif', 'sans-serif'].some((fallback) => {
+      context.font = `72px ${fallback}`
+      const base = context.measureText(probe).width
+      context.font = `72px ${name}, ${fallback}`
+      return context.measureText(probe).width !== base
+    })
+
+  // 只测栈里带引号的具体字体名。不能把整个栈丢进去测——栈尾都带
+  // sans-serif / serif 这类通用族，它们永远可用，会让每个栈都被判成已安装
+  // （实测：这台机器没装微软雅黑，连栈一起测却判成有）。
+  const names = stack.match(/"[^"]+"/g) ?? []
+  return names.some(single)
+}
+
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K, attrs: Record<string, string> = {}, ...children: (Node | string)[]
 ): HTMLElementTagNameMap[K] {
@@ -128,6 +159,20 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
     el('div', { class: 'ss-ctl' }, accent, el('span', { class: 'ss-hint' }, '按钮、链接与选中态'))))
   root.appendChild(el('div', { class: 'ss-row' }, el('label', {}, '底色'),
     el('div', { class: 'ss-ctl' }, bgDark, el('span', {}, '暗色'), bgLight, el('span', {}, '浅色'))))
+
+  // 文字
+  root.appendChild(el('h3', {}, '文字'))
+  const font = el('select', {}) as HTMLSelectElement
+  // 没装的字体不列出来：选了没反应只会让人以为功能坏了
+  for (const option of FONTS) {
+    if (option.stack !== '' && !fontInstalled(option.stack)) continue
+    const node = el('option', { value: option.stack }, option.name)
+    node.style.fontFamily = option.stack === '' ? 'inherit' : option.stack
+    font.append(node)
+  }
+  font.addEventListener('change', () => { set('fontFamily', font.value) })
+  root.appendChild(el('div', { class: 'ss-row' }, el('label', {}, '字体'),
+    el('div', { class: 'ss-ctl' }, font)))
 
   // 背景图
   root.appendChild(el('h3', {}, '背景'))
@@ -235,7 +280,7 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
     el('div', { class: 'ss-ctl' }, pick, clear, status, file)))
 
   const slider = (
-    label: string, key: 'imageOpacity' | 'imageBlur' | 'transparency' | 'wash',
+    label: string, key: 'imageOpacity' | 'imageBlur' | 'transparency' | 'wash' | 'textContrast',
     min: number, max: number, step: number, format: (value: number) => string,
   ): HTMLInputElement => {
     const input = el('input', {
@@ -278,6 +323,7 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
   const imageBlur = slider('背景模糊', 'imageBlur', 0, 40, 1, v => `${String(Math.round(v))}px`)
   const wash = slider('蒙版强度', 'wash', 0, 1, 0.01, percent)
   const transparency = slider('界面透明', 'transparency', 0, 1, 0.01, percent)
+  const textContrast = slider('文字对比', 'textContrast', 0, 1, 0.01, percent)
 
   // 操作
   const save = el('button', { class: 'ss-btn primary', type: 'button' }, '保存')
@@ -307,10 +353,12 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
     bgDark.value = config.bgDark
     bgLight.value = config.bgLight
     fit.value = config.imageFit
+    font.value = config.fontFamily
     syncThumb()
     for (const [input, value] of [
       [imageOpacity, config.imageOpacity], [imageBlur, config.imageBlur],
       [wash, config.wash], [transparency, config.transparency],
+      [textContrast, config.textContrast],
     ] as const) {
       input.value = String(value)
       ;(input as HTMLInputElement & { sync?: () => void }).sync?.()

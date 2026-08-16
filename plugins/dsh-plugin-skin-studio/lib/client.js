@@ -44,7 +44,9 @@ var DEFAULT_CONFIG = {
   imageOpacity: 0.5,
   imageBlur: 0,
   transparency: 0.8,
-  wash: 0.58
+  wash: 0.58,
+  fontFamily: "",
+  textContrast: 0.6
 };
 var PRESETS = [
   { id: "amber", name: "\u6696\u7802", patch: { accent: "#d3aa61", bgDark: "#171817", bgLight: "#f6f5f1" } },
@@ -57,6 +59,17 @@ var BACKGROUND_LEVELS = [
   { id: "soft", name: "\u6DE1\u96C5", patch: { imageOpacity: 0.4, wash: 0.62, transparency: 0.5 } },
   { id: "medium", name: "\u9002\u4E2D", patch: { imageOpacity: 0.68, wash: 0.4, transparency: 0.75 } },
   { id: "clear", name: "\u6E05\u6670", patch: { imageOpacity: 1, wash: 0.12, transparency: 1 } }
+];
+var FONTS = [
+  { id: "default", name: "\u8DDF\u968F Harness\uFF08\u9ED8\u8BA4\uFF09", stack: "" },
+  { id: "pingfang", name: "\u82F9\u65B9", stack: '"PingFang SC", "PingFang TC", sans-serif' },
+  { id: "noto", name: "\u601D\u6E90\u9ED1\u4F53", stack: '"Noto Sans SC", "Source Han Sans SC", sans-serif' },
+  { id: "yahei", name: "\u5FAE\u8F6F\u96C5\u9ED1", stack: '"Microsoft YaHei", sans-serif' },
+  { id: "hiragino", name: "\u51AC\u9752\u9ED1\u4F53", stack: '"Hiragino Sans GB", sans-serif' },
+  { id: "wenkai", name: "\u971E\u9E5C\u6587\u6977", stack: '"LXGW WenKai", "LXGW WenKai GB", sans-serif' },
+  { id: "songti", name: "\u5B8B\u4F53", stack: '"Songti SC", "STSong", serif' },
+  { id: "kaiti", name: "\u6977\u4F53", stack: '"Kaiti SC", "STKaiti", serif' },
+  { id: "mono", name: "\u7B49\u5BBD", stack: '"SF Mono", Menlo, Consolas, monospace' }
 ];
 var FITS = ["contain", "cover", "tile", "stretch"];
 var FIT_LABELS = {
@@ -86,7 +99,10 @@ function normalizeConfig(raw) {
     imageOpacity: clamp(input.imageOpacity, 0, 1, DEFAULT_CONFIG.imageOpacity),
     imageBlur: clamp(input.imageBlur, 0, 40, DEFAULT_CONFIG.imageBlur),
     transparency: clamp(input.transparency, 0, 1, DEFAULT_CONFIG.transparency),
-    wash: clamp(input.wash, 0, 1, DEFAULT_CONFIG.wash)
+    wash: clamp(input.wash, 0, 1, DEFAULT_CONFIG.wash),
+    // 这个值会被写进 CSS 变量，限定字符集挡掉借它注入样式的可能
+    fontFamily: typeof input.fontFamily === "string" && /^[\w\s"',\-]{0,160}$/.test(input.fontFamily) ? input.fontFamily.trim() : "",
+    textContrast: clamp(input.textContrast, 0, 1, DEFAULT_CONFIG.textContrast)
   };
 }
 
@@ -186,13 +202,25 @@ function ensureArtLayer() {
 function isDark() {
   return document.body.hasAttribute(DARK_ATTR);
 }
-function washColor(config, dark) {
+function bgChannels(config, dark) {
   const hex = (dark ? config.bgDark : config.bgLight).replace("#", "");
   const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex.slice(0, 6);
-  const r = Number.parseInt(full.slice(0, 2), 16);
-  const g = Number.parseInt(full.slice(2, 4), 16);
-  const b = Number.parseInt(full.slice(4, 6), 16);
+  return [
+    Number.parseInt(full.slice(0, 2), 16),
+    Number.parseInt(full.slice(2, 4), 16),
+    Number.parseInt(full.slice(4, 6), 16)
+  ];
+}
+function washColor(config, dark) {
+  const [r, g, b] = bgChannels(config, dark);
   return `rgba(${r}, ${g}, ${b}, ${config.wash.toFixed(3)})`;
+}
+function textHalo(config, dark) {
+  if (config.textContrast <= 0) return "none";
+  const [r, g, b] = bgChannels(config, dark);
+  const near = (config.textContrast * 0.55).toFixed(3);
+  const far = (config.textContrast * 0.4).toFixed(3);
+  return `0 0 1px rgba(${r}, ${g}, ${b}, ${near}), 0 1px 3px rgba(${r}, ${g}, ${b}, ${far})`;
 }
 function createSkinRuntime(css) {
   let current;
@@ -274,6 +302,15 @@ function createSkinRuntime(css) {
     style.setProperty("--skin-image-blur", `${String(current.imageBlur)}px`);
     style.setProperty("--skin-transparency", String(current.transparency));
     style.setProperty("--skin-wash", washColor(current, dark));
+    if (current.fontFamily === "") {
+      style.removeProperty("--skin-font");
+      delete root.dataset.skinFont;
+    } else {
+      style.setProperty("--skin-font", current.fontFamily);
+      root.dataset.skinFont = "on";
+    }
+    style.setProperty("--skin-contrast", String(current.textContrast));
+    style.setProperty("--skin-text-halo", textHalo(current, dark));
     const hasBackdrop = current.image !== "" || current.videoId !== "";
     style.setProperty(
       "--skin-backdrop-opacity",
@@ -314,6 +351,7 @@ function createSkinRuntime(css) {
       root.classList.remove("skin-studio");
       delete root.dataset.skinMode;
       delete root.dataset.skinBg;
+      delete root.dataset.skinFont;
       for (const name of [
         "--skin-accent",
         "--skin-bg",
@@ -326,7 +364,10 @@ function createSkinRuntime(css) {
         "--skin-image-size",
         "--skin-image-repeat",
         "--skin-video-fit",
-        "--skin-backdrop-image"
+        "--skin-backdrop-image",
+        "--skin-font",
+        "--skin-contrast",
+        "--skin-text-halo"
       ]) {
         root.style.removeProperty(name);
       }
@@ -387,6 +428,19 @@ var CSS = `
 .ss-switch { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
 .ss-level-label { flex: 0 0 84px; color: var(--dsw-alias-label-secondary, inherit); }
 `;
+function fontInstalled(stack) {
+  const context = document.createElement("canvas").getContext("2d");
+  if (context === null) return true;
+  const probe = "\u4E2D\u6587\u5B57\u4F53AaBbGg018";
+  const single = (name) => ["monospace", "serif", "sans-serif"].some((fallback) => {
+    context.font = `72px ${fallback}`;
+    const base = context.measureText(probe).width;
+    context.font = `72px ${name}, ${fallback}`;
+    return context.measureText(probe).width !== base;
+  });
+  const names = stack.match(/"[^"]+"/g) ?? [];
+  return names.some(single);
+}
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
@@ -453,6 +507,23 @@ function createSkinPanel(options) {
     { class: "ss-row" },
     el("label", {}, "\u5E95\u8272"),
     el("div", { class: "ss-ctl" }, bgDark, el("span", {}, "\u6697\u8272"), bgLight, el("span", {}, "\u6D45\u8272"))
+  ));
+  root.appendChild(el("h3", {}, "\u6587\u5B57"));
+  const font = el("select", {});
+  for (const option of FONTS) {
+    if (option.stack !== "" && !fontInstalled(option.stack)) continue;
+    const node = el("option", { value: option.stack }, option.name);
+    node.style.fontFamily = option.stack === "" ? "inherit" : option.stack;
+    font.append(node);
+  }
+  font.addEventListener("change", () => {
+    set("fontFamily", font.value);
+  });
+  root.appendChild(el(
+    "div",
+    { class: "ss-row" },
+    el("label", {}, "\u5B57\u4F53"),
+    el("div", { class: "ss-ctl" }, font)
   ));
   root.appendChild(el("h3", {}, "\u80CC\u666F"));
   const thumb = el("div", { class: "ss-thumb" });
@@ -608,6 +679,7 @@ function createSkinPanel(options) {
   const imageBlur = slider("\u80CC\u666F\u6A21\u7CCA", "imageBlur", 0, 40, 1, (v) => `${String(Math.round(v))}px`);
   const wash = slider("\u8499\u7248\u5F3A\u5EA6", "wash", 0, 1, 0.01, percent);
   const transparency = slider("\u754C\u9762\u900F\u660E", "transparency", 0, 1, 0.01, percent);
+  const textContrast = slider("\u6587\u5B57\u5BF9\u6BD4", "textContrast", 0, 1, 0.01, percent);
   const save2 = el("button", { class: "ss-btn primary", type: "button" }, "\u4FDD\u5B58");
   const reset = el("button", { class: "ss-btn", type: "button" }, "\u6062\u590D\u9ED8\u8BA4");
   const saveHint = el("span", { class: "ss-hint" }, "\u6539\u52A8\u5373\u65F6\u9884\u89C8\uFF0C\u4FDD\u5B58\u540E\u5BF9\u6240\u6709\u7A97\u53E3\u751F\u6548");
@@ -635,12 +707,14 @@ function createSkinPanel(options) {
     bgDark.value = config.bgDark;
     bgLight.value = config.bgLight;
     fit.value = config.imageFit;
+    font.value = config.fontFamily;
     syncThumb();
     for (const [input, value] of [
       [imageOpacity, config.imageOpacity],
       [imageBlur, config.imageBlur],
       [wash, config.wash],
-      [transparency, config.transparency]
+      [transparency, config.transparency],
+      [textContrast, config.textContrast]
     ]) {
       input.value = String(value);
       input.sync?.();
@@ -1070,6 +1144,13 @@ var skin_default = `/*
      \u518D\u5F80\u4E0A\u8D70\u6587\u5B57\u5C31\u538B\u4E0D\u4F4F\u56FE\u4E86\uFF0C\u6240\u4EE5\u5E45\u5EA6\u5199\u6B7B\u5728\u8FD9\u91CC\u3001\u4E0D\u518D\u5F00\u653E\u3002 */
   --skin-transparency: 0.8;
 
+  /* \u5B57\u4F53\uFF1A\u4EC5\u5728\u7528\u6237\u6307\u5B9A\u65F6\u624D\u7531 data-skin-font \u6253\u5F00\u8986\u76D6 */
+  --skin-font: inherit;
+  /* \u6587\u5B57\u5BF9\u6BD4 0~1\uFF0C\u4E0B\u9762\u5404\u7EA7\u6587\u5B57\u8272\u6309\u5B83\u5F80\u4E3B\u8272\u9760 */
+  --skin-contrast: 0.6;
+  /* \u6587\u5B57\u5149\u6655\uFF0C\u7531\u63D2\u4EF6\u6309\u5BF9\u6BD4\u5EA6\u4E0E\u5E95\u8272\u7B97\u51FA */
+  --skin-text-halo: none;
+
   /* \u5706\u89D2\u4E0E\u52A8\u6548 */
   --skin-radius: 13px;
   --skin-control-radius: 8px;
@@ -1236,10 +1317,10 @@ body[data-ds-dark-theme] {
   --dsw-alias-label-primary-dimmed: color-mix(in srgb, var(--skin-text) 62%, transparent);
   --dsw-alias-label-primary-foreground: var(--skin-text);
   --dsw-alias-label-primary-inverted: var(--skin-accent-ink);
-  --dsw-alias-label-secondary: color-mix(in srgb, var(--skin-text) 78%, var(--skin-bg));
-  --dsw-alias-label-tertiary: var(--skin-muted);
-  --dsw-alias-label-caption: color-mix(in srgb, var(--skin-muted) 82%, var(--skin-bg));
-  --dsw-alias-label-dimmed: color-mix(in srgb, var(--skin-muted) 64%, var(--skin-bg));
+  --dsw-alias-label-secondary: color-mix(in srgb, var(--skin-text) calc(78% + var(--skin-contrast) * 22%), var(--skin-bg));
+  --dsw-alias-label-tertiary: color-mix(in srgb, var(--skin-text) calc(var(--skin-contrast) * 62%), var(--skin-muted));
+  --dsw-alias-label-caption: color-mix(in srgb, var(--skin-muted) calc(82% + var(--skin-contrast) * 18%), var(--skin-bg));
+  --dsw-alias-label-dimmed: color-mix(in srgb, var(--skin-muted) calc(64% + var(--skin-contrast) * 36%), var(--skin-bg));
 
   --dsw-alias-brand-primary: var(--skin-accent);
   --dsw-alias-brand-primary-invert: var(--skin-accent-ink);
@@ -1340,6 +1421,40 @@ html.skin-studio * {
 
 html.skin-studio ::selection {
   background: color-mix(in srgb, var(--skin-accent) 24%, transparent);
+}
+
+/* \u2500\u2500 \u6587\u5B57 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   \u5B57\u4F53\u53EA\u8986\u76D6 body\uFF1Adsh \u5404\u5904\u7684\u5B57\u4F53\u90FD\u662F\u4ECE\u8FD9\u91CC\u7EE7\u627F\u4E0B\u6765\u7684\uFF08\u5B9E\u6D4B\u4FA7\u680F\u3001\u6309\u94AE
+   \u53D6\u5230\u7684 font-family \u4E0E body \u5B8C\u5168\u4E00\u81F4\uFF09\uFF0C\u4E0D\u5FC5\u7ED9\u6BCF\u4E2A\u7EC4\u4EF6\u52A0 !important\u3002
+   \u4EE3\u7801\u5757\u9664\u5916\u2014\u2014\u5B83\u8BE5\u4FDD\u6301\u7B49\u5BBD\u3002 */
+html.skin-studio[data-skin-font] body {
+  font-family: var(--skin-font);
+}
+
+html.skin-studio[data-skin-font] code,
+html.skin-studio[data-skin-font] pre,
+html.skin-studio[data-skin-font] kbd,
+html.skin-studio[data-skin-font] samp {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/*
+ * \u6587\u5B57\u5149\u6655\u3002
+ *
+ * \u754C\u9762\u900F\u51FA\u80CC\u666F\u56FE\u4E4B\u540E\uFF0C\u5149\u9760\u6587\u5B57\u989C\u8272\u538B\u4E0D\u4F4F\u8EAB\u540E\u7684\u82B1\u7EB9\u2014\u2014\u5C24\u5176\u662F\u6D45\u8272\u80CC\u666F\u56FE\u914D
+ * \u6DF1\u8272\u5B57\u65F6\uFF0C\u7B14\u753B\u4F1A\u88AB\u56FE\u6848"\u54AC\u65AD"\u3002\u52A0\u4E00\u5C42\u4E0E\u5E95\u8272\u540C\u8272\u7684\u6781\u6D45\u5149\u6655\uFF0C\u7B49\u4E8E\u7ED9\u6BCF\u4E2A\u5B57
+ * \u57AB\u4E86\u5F20\u7EB8\uFF0C\u4E0D\u6539\u989C\u8272\u4E5F\u80FD\u628A\u5B57\u4ECE\u56FE\u91CC\u62CE\u51FA\u6765\u3002
+ */
+html.skin-studio body {
+  text-shadow: var(--skin-text-halo);
+}
+
+/* \u4EE3\u7801\u5757\u4E0E\u8F93\u5165\u6846\u81EA\u5E26\u5B9E\u5E95\uFF0C\u5149\u6655\u53EA\u4F1A\u8BA9\u5B57\u53D1\u865A */
+html.skin-studio pre,
+html.skin-studio code,
+html.skin-studio input,
+html.skin-studio textarea {
+  text-shadow: none;
 }
 `;
 
