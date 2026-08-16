@@ -41,13 +41,16 @@ export interface SkinConfig {
   wash: number
   /** 字体栈（CSS font-family 的值）；空字符串表示跟随 Harness 原生字体。 */
   fontFamily: string
-  /**
-   * 文字对比 0~1。
-   *
-   * 做两件事：把次级、三级文字往主文字色拉；给文字加一层与底色同色的光晕，
-   * 把身后透上来的背景图压住。界面越透，这项越需要往上调。
-   */
+  /** 文字对比 0~1：把次级、三级文字往主文字色拉，越大越浓。 */
   textContrast: number
+  /**
+   * 文字描边 0~1，默认关闭。
+   *
+   * 给字形描一圈与底色同色的硬边。只在背景深或杂乱、文字压不住时才需要——
+   * 描边色只在恰好等于底色时隐形，背景稍微带点颜色（比如浅蓝的图）就会
+   * 露出一圈白边，所以不能默认开着。
+   */
+  textStroke: number
 }
 
 export const DEFAULT_CONFIG: SkinConfig = {
@@ -65,6 +68,7 @@ export const DEFAULT_CONFIG: SkinConfig = {
   wash: 0.58,
   fontFamily: '',
   textContrast: 0.85,
+  textStroke: 0,
 }
 
 /** 内置预设，用户不选图也能一键换个样子。 */
@@ -90,10 +94,10 @@ export const PRESETS: readonly SkinPreset[] = [
  * 之后仍可用滑块微调。
  */
 export const BACKGROUND_LEVELS: readonly SkinPreset[] = [
-  { id: 'soft', name: '淡雅', patch: { imageOpacity: 0.4, wash: 0.5, transparency: 0.5, textContrast: 0.75 } },
-  { id: 'medium', name: '适中', patch: { imageOpacity: 0.7, wash: 0.3, transparency: 0.75, textContrast: 0.85 } },
+  { id: 'soft', name: '淡雅', patch: { imageOpacity: 0.4, wash: 0.5, transparency: 0.5, textContrast: 0.75, textStroke: 0 } },
+  { id: 'medium', name: '适中', patch: { imageOpacity: 0.7, wash: 0.3, transparency: 0.75, textContrast: 0.85, textStroke: 0 } },
   // 「清晰」指背景图看得清楚，不是取消保护：蒙版仍留一层，靠文字光晕补足可读性
-  { id: 'clear', name: '清晰', patch: { imageOpacity: 1, wash: 0.1, transparency: 0.95, textContrast: 1 } },
+  { id: 'clear', name: '清晰', patch: { imageOpacity: 1, wash: 0.1, transparency: 0.95, textContrast: 1, textStroke: 0.45 } },
 ]
 
 /** 可选字体。stack 为空表示不覆盖，沿用 Harness 自己的字体栈。 */
@@ -110,15 +114,16 @@ export interface FontOption {
  * 没装的不显示——列一堆选了没反应的选项只会让人以为功能坏了。
  */
 export const FONTS: readonly FontOption[] = [
-  { id: 'default', name: '跟随 Harness（默认）', stack: '' },
-  { id: 'pingfang', name: '苹方', stack: '"PingFang SC", "PingFang TC", sans-serif' },
-  { id: 'noto', name: '思源黑体', stack: '"Noto Sans SC", "Source Han Sans SC", sans-serif' },
-  { id: 'yahei', name: '微软雅黑', stack: '"Microsoft YaHei", sans-serif' },
-  { id: 'hiragino', name: '冬青黑体', stack: '"Hiragino Sans GB", sans-serif' },
-  { id: 'wenkai', name: '霞鹜文楷', stack: '"LXGW WenKai", "LXGW WenKai GB", sans-serif' },
-  { id: 'songti', name: '宋体', stack: '"Songti SC", "STSong", serif' },
-  { id: 'kaiti', name: '楷体', stack: '"Kaiti SC", "STKaiti", serif' },
+  { id: 'default', name: '跟随 Harness（无衬线，默认）', stack: '' },
+  { id: 'pingfang', name: '苹方（无衬线）', stack: '"PingFang SC", "PingFang TC", sans-serif' },
+  { id: 'noto', name: '思源黑体（无衬线）', stack: '"Noto Sans SC", "Source Han Sans SC", sans-serif' },
+  { id: 'yahei', name: '微软雅黑（无衬线）', stack: '"Microsoft YaHei", sans-serif' },
+  { id: 'hiragino', name: '冬青黑体（无衬线）', stack: '"Hiragino Sans GB", sans-serif' },
   { id: 'mono', name: '等宽', stack: '"SF Mono", Menlo, Consolas, monospace' },
+  // 衬线体明确标注：正文长期阅读一般用无衬线，别让人误选
+  { id: 'songti', name: '宋体（衬线）', stack: '"Songti SC", "STSong", serif' },
+  { id: 'kaiti', name: '楷体（衬线）', stack: '"Kaiti SC", "STKaiti", serif' },
+  { id: 'wenkai', name: '霞鹜文楷（楷体）', stack: '"LXGW WenKai", "LXGW WenKai GB", serif' },
 ]
 
 /** 适配方式的合法取值，兼作界面上的选项来源。 */
@@ -164,5 +169,6 @@ export function normalizeConfig(raw: unknown): SkinConfig {
       ? input.fontFamily.trim()
       : '',
     textContrast: clamp(input.textContrast, 0, 1, DEFAULT_CONFIG.textContrast),
+    textStroke: clamp(input.textStroke, 0, 1, DEFAULT_CONFIG.textStroke),
   }
 }

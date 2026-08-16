@@ -131,6 +131,22 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
   root.appendChild(el('div', { class: 'ss-switch' }, enabled,
     el('label', { for: 'ss-enabled' }, '启用皮肤（关闭后恢复 Harness 原生外观）')))
 
+  // 文字
+  root.appendChild(el('h3', {}, '文字'))
+  const font = el('select', {}) as HTMLSelectElement
+  // 没装的字体不列出来：选了没反应只会让人以为功能坏了
+  for (const option of FONTS) {
+    if (option.stack !== '' && !fontInstalled(option.stack)) continue
+    const node = el('option', { value: option.stack }, option.name)
+    node.style.fontFamily = option.stack === '' ? 'inherit' : option.stack
+    font.append(node)
+  }
+  font.addEventListener('change', () => { set('fontFamily', font.value) })
+  root.appendChild(el('div', { class: 'ss-row' }, el('label', {}, '字体'),
+    el('div', { class: 'ss-ctl' }, font)))
+  const textRows = el('div', {})
+  root.appendChild(textRows)
+
   // 预设
   root.appendChild(el('h3', {}, '配色预设'))
   const presets = el('div', { class: 'ss-presets' })
@@ -159,20 +175,6 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
     el('div', { class: 'ss-ctl' }, accent, el('span', { class: 'ss-hint' }, '按钮、链接与选中态'))))
   root.appendChild(el('div', { class: 'ss-row' }, el('label', {}, '底色'),
     el('div', { class: 'ss-ctl' }, bgDark, el('span', {}, '暗色'), bgLight, el('span', {}, '浅色'))))
-
-  // 文字
-  root.appendChild(el('h3', {}, '文字'))
-  const font = el('select', {}) as HTMLSelectElement
-  // 没装的字体不列出来：选了没反应只会让人以为功能坏了
-  for (const option of FONTS) {
-    if (option.stack !== '' && !fontInstalled(option.stack)) continue
-    const node = el('option', { value: option.stack }, option.name)
-    node.style.fontFamily = option.stack === '' ? 'inherit' : option.stack
-    font.append(node)
-  }
-  font.addEventListener('change', () => { set('fontFamily', font.value) })
-  root.appendChild(el('div', { class: 'ss-row' }, el('label', {}, '字体'),
-    el('div', { class: 'ss-ctl' }, font)))
 
   // 背景图
   root.appendChild(el('h3', {}, '背景'))
@@ -280,8 +282,10 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
     el('div', { class: 'ss-ctl' }, pick, clear, status, file)))
 
   const slider = (
-    label: string, key: 'imageOpacity' | 'imageBlur' | 'transparency' | 'wash' | 'textContrast',
+    label: string,
+    key: 'imageOpacity' | 'imageBlur' | 'transparency' | 'wash' | 'textContrast' | 'textStroke',
     min: number, max: number, step: number, format: (value: number) => string,
+    host: HTMLElement = root,
   ): HTMLInputElement => {
     const input = el('input', {
       type: 'range', min: String(min), max: String(max), step: String(step),
@@ -292,7 +296,7 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
       set(key, Number(input.value))
       update()
     })
-    root.appendChild(el('div', { class: 'ss-row' }, el('label', {}, label),
+    host.appendChild(el('div', { class: 'ss-row' }, el('label', {}, label),
       el('div', { class: 'ss-ctl' }, input, value)))
     ;(input as HTMLInputElement & { sync?: () => void }).sync = update
     return input
@@ -319,11 +323,13 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
   root.appendChild(levels)
 
   const percent = (value: number): string => `${String(Math.round(value * 100))}%`
+  const textContrast = slider('文字浓度', 'textContrast', 0, 1, 0.01, percent, textRows)
+  const textStroke = slider('文字描边', 'textStroke', 0, 1, 0.01,
+    (v) => (v === 0 ? '关' : percent(v)), textRows)
   const imageOpacity = slider('背景浓度', 'imageOpacity', 0, 1, 0.01, percent)
   const imageBlur = slider('背景模糊', 'imageBlur', 0, 40, 1, v => `${String(Math.round(v))}px`)
   const wash = slider('蒙版强度', 'wash', 0, 1, 0.01, percent)
   const transparency = slider('界面透明', 'transparency', 0, 1, 0.01, percent)
-  const textContrast = slider('文字对比', 'textContrast', 0, 1, 0.01, percent)
 
   // 操作
   const save = el('button', { class: 'ss-btn primary', type: 'button' }, '保存')
@@ -358,7 +364,7 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
     for (const [input, value] of [
       [imageOpacity, config.imageOpacity], [imageBlur, config.imageBlur],
       [wash, config.wash], [transparency, config.transparency],
-      [textContrast, config.textContrast],
+      [textContrast, config.textContrast], [textStroke, config.textStroke],
     ] as const) {
       input.value = String(value)
       ;(input as HTMLInputElement & { sync?: () => void }).sync?.()

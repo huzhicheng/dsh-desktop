@@ -120,19 +120,21 @@ function washColor(config: SkinConfig, dark: boolean): string {
  * 一层散开压住背后的花纹。
  */
 function textHalo(config: SkinConfig, dark: boolean): string {
-  if (config.textContrast <= 0) return 'none'
+  if (config.textStroke <= 0) return 'none'
   const [r, g, b] = bgChannels(config, dark)
-  const ink = `rgba(${r}, ${g}, ${b}, ${(config.textContrast * 0.95).toFixed(3)})`
+  const ink = `rgba(${r}, ${g}, ${b}, ${(config.textStroke * 0.95).toFixed(3)})`
   /*
    * 八个方向各 1px、模糊半径为 0——给字形描一圈硬边，字幕就是这么做的。
    *
    * 不能用大范围的模糊光晕：那在浅色背景上根本起不到分离作用（晕色和底色
    * 本就接近），只会把笔画边缘糊开，看着更虚（实测踩过）。
    *
-   * 硬描边的好处是两头都占：拿纯黑/中灰/纯白/高频条纹四种底做过对比，
-   * 白底上它与无描边的效果像素级一致（描边色就是底色，等于隐形），
-   * 黑底上则是唯一能把字切出来的做法——无描边那行最亮像素为 0，
-   * 即完全看不见；八向硬描边能到 245。
+   * 但它只在描边色恰好等于底色时才隐形。背景稍微带点颜色（比如一张浅蓝的
+   * 插画），米色描边就会显出一圈白边——我之前拿纯白当浅色底测，正好掩盖了
+   * 这一点。所以默认关闭，只作为背景深或杂乱时的补救手段。
+   *
+   * 需要时它确实有效：黑底上无描边那行最亮像素为 0（完全看不见），
+   * 八向硬描边能到 245。
    */
   return [
     '1px 0', '-1px 0', '0 1px', '0 -1px',

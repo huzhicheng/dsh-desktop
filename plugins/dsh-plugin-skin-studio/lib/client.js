@@ -46,7 +46,8 @@ var DEFAULT_CONFIG = {
   transparency: 0.8,
   wash: 0.58,
   fontFamily: "",
-  textContrast: 0.85
+  textContrast: 0.85,
+  textStroke: 0
 };
 var PRESETS = [
   { id: "amber", name: "\u6696\u7802", patch: { accent: "#d3aa61", bgDark: "#171817", bgLight: "#f6f5f1" } },
@@ -56,21 +57,22 @@ var PRESETS = [
   { id: "slate", name: "\u7D20\u77F3", patch: { accent: "#9aa0a6", bgDark: "#161718", bgLight: "#f4f4f5" } }
 ];
 var BACKGROUND_LEVELS = [
-  { id: "soft", name: "\u6DE1\u96C5", patch: { imageOpacity: 0.4, wash: 0.5, transparency: 0.5, textContrast: 0.75 } },
-  { id: "medium", name: "\u9002\u4E2D", patch: { imageOpacity: 0.7, wash: 0.3, transparency: 0.75, textContrast: 0.85 } },
+  { id: "soft", name: "\u6DE1\u96C5", patch: { imageOpacity: 0.4, wash: 0.5, transparency: 0.5, textContrast: 0.75, textStroke: 0 } },
+  { id: "medium", name: "\u9002\u4E2D", patch: { imageOpacity: 0.7, wash: 0.3, transparency: 0.75, textContrast: 0.85, textStroke: 0 } },
   // 「清晰」指背景图看得清楚，不是取消保护：蒙版仍留一层，靠文字光晕补足可读性
-  { id: "clear", name: "\u6E05\u6670", patch: { imageOpacity: 1, wash: 0.1, transparency: 0.95, textContrast: 1 } }
+  { id: "clear", name: "\u6E05\u6670", patch: { imageOpacity: 1, wash: 0.1, transparency: 0.95, textContrast: 1, textStroke: 0.45 } }
 ];
 var FONTS = [
-  { id: "default", name: "\u8DDF\u968F Harness\uFF08\u9ED8\u8BA4\uFF09", stack: "" },
-  { id: "pingfang", name: "\u82F9\u65B9", stack: '"PingFang SC", "PingFang TC", sans-serif' },
-  { id: "noto", name: "\u601D\u6E90\u9ED1\u4F53", stack: '"Noto Sans SC", "Source Han Sans SC", sans-serif' },
-  { id: "yahei", name: "\u5FAE\u8F6F\u96C5\u9ED1", stack: '"Microsoft YaHei", sans-serif' },
-  { id: "hiragino", name: "\u51AC\u9752\u9ED1\u4F53", stack: '"Hiragino Sans GB", sans-serif' },
-  { id: "wenkai", name: "\u971E\u9E5C\u6587\u6977", stack: '"LXGW WenKai", "LXGW WenKai GB", sans-serif' },
-  { id: "songti", name: "\u5B8B\u4F53", stack: '"Songti SC", "STSong", serif' },
-  { id: "kaiti", name: "\u6977\u4F53", stack: '"Kaiti SC", "STKaiti", serif' },
-  { id: "mono", name: "\u7B49\u5BBD", stack: '"SF Mono", Menlo, Consolas, monospace' }
+  { id: "default", name: "\u8DDF\u968F Harness\uFF08\u65E0\u886C\u7EBF\uFF0C\u9ED8\u8BA4\uFF09", stack: "" },
+  { id: "pingfang", name: "\u82F9\u65B9\uFF08\u65E0\u886C\u7EBF\uFF09", stack: '"PingFang SC", "PingFang TC", sans-serif' },
+  { id: "noto", name: "\u601D\u6E90\u9ED1\u4F53\uFF08\u65E0\u886C\u7EBF\uFF09", stack: '"Noto Sans SC", "Source Han Sans SC", sans-serif' },
+  { id: "yahei", name: "\u5FAE\u8F6F\u96C5\u9ED1\uFF08\u65E0\u886C\u7EBF\uFF09", stack: '"Microsoft YaHei", sans-serif' },
+  { id: "hiragino", name: "\u51AC\u9752\u9ED1\u4F53\uFF08\u65E0\u886C\u7EBF\uFF09", stack: '"Hiragino Sans GB", sans-serif' },
+  { id: "mono", name: "\u7B49\u5BBD", stack: '"SF Mono", Menlo, Consolas, monospace' },
+  // 衬线体明确标注：正文长期阅读一般用无衬线，别让人误选
+  { id: "songti", name: "\u5B8B\u4F53\uFF08\u886C\u7EBF\uFF09", stack: '"Songti SC", "STSong", serif' },
+  { id: "kaiti", name: "\u6977\u4F53\uFF08\u886C\u7EBF\uFF09", stack: '"Kaiti SC", "STKaiti", serif' },
+  { id: "wenkai", name: "\u971E\u9E5C\u6587\u6977\uFF08\u6977\u4F53\uFF09", stack: '"LXGW WenKai", "LXGW WenKai GB", serif' }
 ];
 var FITS = ["contain", "cover", "tile", "stretch"];
 var FIT_LABELS = {
@@ -103,7 +105,8 @@ function normalizeConfig(raw) {
     wash: clamp(input.wash, 0, 1, DEFAULT_CONFIG.wash),
     // 这个值会被写进 CSS 变量，限定字符集挡掉借它注入样式的可能
     fontFamily: typeof input.fontFamily === "string" && /^[\w\s"',\-]{0,160}$/.test(input.fontFamily) ? input.fontFamily.trim() : "",
-    textContrast: clamp(input.textContrast, 0, 1, DEFAULT_CONFIG.textContrast)
+    textContrast: clamp(input.textContrast, 0, 1, DEFAULT_CONFIG.textContrast),
+    textStroke: clamp(input.textStroke, 0, 1, DEFAULT_CONFIG.textStroke)
   };
 }
 
@@ -219,9 +222,9 @@ function washColor(config, dark) {
   return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
 }
 function textHalo(config, dark) {
-  if (config.textContrast <= 0) return "none";
+  if (config.textStroke <= 0) return "none";
   const [r, g, b] = bgChannels(config, dark);
-  const ink = `rgba(${r}, ${g}, ${b}, ${(config.textContrast * 0.95).toFixed(3)})`;
+  const ink = `rgba(${r}, ${g}, ${b}, ${(config.textStroke * 0.95).toFixed(3)})`;
   return [
     "1px 0",
     "-1px 0",
@@ -480,6 +483,25 @@ function createSkinPanel(options) {
     enabled,
     el("label", { for: "ss-enabled" }, "\u542F\u7528\u76AE\u80A4\uFF08\u5173\u95ED\u540E\u6062\u590D Harness \u539F\u751F\u5916\u89C2\uFF09")
   ));
+  root.appendChild(el("h3", {}, "\u6587\u5B57"));
+  const font = el("select", {});
+  for (const option of FONTS) {
+    if (option.stack !== "" && !fontInstalled(option.stack)) continue;
+    const node = el("option", { value: option.stack }, option.name);
+    node.style.fontFamily = option.stack === "" ? "inherit" : option.stack;
+    font.append(node);
+  }
+  font.addEventListener("change", () => {
+    set("fontFamily", font.value);
+  });
+  root.appendChild(el(
+    "div",
+    { class: "ss-row" },
+    el("label", {}, "\u5B57\u4F53"),
+    el("div", { class: "ss-ctl" }, font)
+  ));
+  const textRows = el("div", {});
+  root.appendChild(textRows);
   root.appendChild(el("h3", {}, "\u914D\u8272\u9884\u8BBE"));
   const presets = el("div", { class: "ss-presets" });
   for (const preset of PRESETS) {
@@ -518,23 +540,6 @@ function createSkinPanel(options) {
     { class: "ss-row" },
     el("label", {}, "\u5E95\u8272"),
     el("div", { class: "ss-ctl" }, bgDark, el("span", {}, "\u6697\u8272"), bgLight, el("span", {}, "\u6D45\u8272"))
-  ));
-  root.appendChild(el("h3", {}, "\u6587\u5B57"));
-  const font = el("select", {});
-  for (const option of FONTS) {
-    if (option.stack !== "" && !fontInstalled(option.stack)) continue;
-    const node = el("option", { value: option.stack }, option.name);
-    node.style.fontFamily = option.stack === "" ? "inherit" : option.stack;
-    font.append(node);
-  }
-  font.addEventListener("change", () => {
-    set("fontFamily", font.value);
-  });
-  root.appendChild(el(
-    "div",
-    { class: "ss-row" },
-    el("label", {}, "\u5B57\u4F53"),
-    el("div", { class: "ss-ctl" }, font)
   ));
   root.appendChild(el("h3", {}, "\u80CC\u666F"));
   const thumb = el("div", { class: "ss-thumb" });
@@ -638,7 +643,7 @@ function createSkinPanel(options) {
     { class: "ss-row" },
     el("div", { class: "ss-ctl" }, pick, clear, status, file)
   ));
-  const slider = (label, key, min, max, step, format) => {
+  const slider = (label, key, min, max, step, format, host = root) => {
     const input = el("input", {
       type: "range",
       min: String(min),
@@ -653,7 +658,7 @@ function createSkinPanel(options) {
       set(key, Number(input.value));
       update();
     });
-    root.appendChild(el(
+    host.appendChild(el(
       "div",
       { class: "ss-row" },
       el("label", {}, label),
@@ -686,11 +691,20 @@ function createSkinPanel(options) {
   }
   root.appendChild(levels);
   const percent = (value) => `${String(Math.round(value * 100))}%`;
+  const textContrast = slider("\u6587\u5B57\u6D53\u5EA6", "textContrast", 0, 1, 0.01, percent, textRows);
+  const textStroke = slider(
+    "\u6587\u5B57\u63CF\u8FB9",
+    "textStroke",
+    0,
+    1,
+    0.01,
+    (v) => v === 0 ? "\u5173" : percent(v),
+    textRows
+  );
   const imageOpacity = slider("\u80CC\u666F\u6D53\u5EA6", "imageOpacity", 0, 1, 0.01, percent);
   const imageBlur = slider("\u80CC\u666F\u6A21\u7CCA", "imageBlur", 0, 40, 1, (v) => `${String(Math.round(v))}px`);
   const wash = slider("\u8499\u7248\u5F3A\u5EA6", "wash", 0, 1, 0.01, percent);
   const transparency = slider("\u754C\u9762\u900F\u660E", "transparency", 0, 1, 0.01, percent);
-  const textContrast = slider("\u6587\u5B57\u5BF9\u6BD4", "textContrast", 0, 1, 0.01, percent);
   const save2 = el("button", { class: "ss-btn primary", type: "button" }, "\u4FDD\u5B58");
   const reset = el("button", { class: "ss-btn", type: "button" }, "\u6062\u590D\u9ED8\u8BA4");
   const saveHint = el("span", { class: "ss-hint" }, "\u6539\u52A8\u5373\u65F6\u9884\u89C8\uFF0C\u4FDD\u5B58\u540E\u5BF9\u6240\u6709\u7A97\u53E3\u751F\u6548");
@@ -725,7 +739,8 @@ function createSkinPanel(options) {
       [imageBlur, config.imageBlur],
       [wash, config.wash],
       [transparency, config.transparency],
-      [textContrast, config.textContrast]
+      [textContrast, config.textContrast],
+      [textStroke, config.textStroke]
     ]) {
       input.value = String(value);
       input.sync?.();
