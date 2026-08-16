@@ -103,6 +103,7 @@ function openSkinPanel(runtime: ReturnType<typeof createSkinRuntime>): void {
     initial: load(),
     onPreview: (config) => { runtime.apply(config) },
     onSave: (config) => { save(config) },
+    onDone: close,
   }))
 
   dialog.append(head, scroll)

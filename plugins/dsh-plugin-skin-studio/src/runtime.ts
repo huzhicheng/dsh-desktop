@@ -15,6 +15,19 @@ const VIDEO_ID = 'skin-studio-video'
 /** dsh 用 body 上的这个属性表示暗色主题。 */
 const DARK_ATTR = 'data-ds-dark-theme'
 
+/**
+ * 适配方式 → 具体的 CSS 取值。
+ *
+ * 图片走 background-size/repeat，视频走 object-fit；视频没有平铺的说法，
+ * 落回填满即可。
+ */
+const FIT_STYLE: Record<SkinConfig['imageFit'], { size: string; repeat: string; object: string }> = {
+  cover: { size: 'cover', repeat: 'no-repeat', object: 'cover' },
+  contain: { size: 'contain', repeat: 'no-repeat', object: 'contain' },
+  tile: { size: 'auto', repeat: 'repeat', object: 'cover' },
+  stretch: { size: '100% 100%', repeat: 'no-repeat', object: 'fill' },
+}
+
 export interface SkinRuntime {
   /** 应用一份配置（可反复调用，用于实时预览）。 */
   apply(config: SkinConfig): void
@@ -159,6 +172,10 @@ export function createSkinRuntime(css: string): SkinRuntime {
     style.setProperty('--skin-accent', current.accent)
     style.setProperty('--skin-bg', dark ? current.bgDark : current.bgLight)
     style.setProperty('--skin-image', current.image === '' ? 'none' : `url("${current.image}")`)
+    const fit = FIT_STYLE[current.imageFit] ?? FIT_STYLE.cover
+    style.setProperty('--skin-image-size', fit.size)
+    style.setProperty('--skin-image-repeat', fit.repeat)
+    style.setProperty('--skin-video-fit', fit.object)
     style.setProperty('--skin-image-opacity', String(current.imageOpacity))
     style.setProperty('--skin-image-blur', `${String(current.imageBlur)}px`)
     style.setProperty('--skin-transparency', String(current.transparency))
@@ -205,6 +222,7 @@ export function createSkinRuntime(css: string): SkinRuntime {
       for (const name of [
         '--skin-accent', '--skin-bg', '--skin-image', '--skin-image-opacity',
         '--skin-image-blur', '--skin-transparency', '--skin-wash', '--skin-backdrop-opacity',
+        '--skin-image-size', '--skin-image-repeat', '--skin-video-fit',
       ]) {
         root.style.removeProperty(name)
       }

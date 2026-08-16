@@ -5,7 +5,9 @@
  * 也方便脱离 dsh 单独调试。改动即时预览，用户看到的就是最终效果。
  */
 
-import { BACKGROUND_LEVELS, DEFAULT_CONFIG, PRESETS, type SkinConfig } from './config'
+import {
+  BACKGROUND_LEVELS, DEFAULT_CONFIG, FIT_LABELS, FITS, PRESETS, type SkinConfig,
+} from './config'
 import { imageToDataUri } from './runtime'
 import { getVideo, putVideo, pruneVideos } from './video-store'
 
@@ -24,6 +26,8 @@ export interface PanelOptions {
   onPreview: (config: SkinConfig) => void
   /** 用户点「保存」时回调，用于持久化。 */
   onSave: (config: SkinConfig) => Promise<void> | void
+  /** 保存成功后回调；对话框据此关掉自己。面板嵌在设置页里时可以不传。 */
+  onDone?: () => void
 }
 
 const CSS = `
@@ -35,6 +39,8 @@ const CSS = `
 .ss-val { flex: 0 0 42px; text-align: right; font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-tertiary, inherit); font-size: 12px; }
 .ss-panel input[type=range] { flex: 1; accent-color: var(--skin-accent, #d3aa61); min-width: 0; }
+.ss-panel select { flex: 1; font: inherit; font-size: 12px; padding: 5px 8px; border-radius: 7px;
+  border: 1px solid var(--dsw-alias-border-l2, #8883); background: transparent; color: inherit; }
 .ss-panel input[type=color] { width: 34px; height: 26px; padding: 0; border: 1px solid var(--dsw-alias-border-l2, #8883);
   border-radius: 6px; background: none; cursor: pointer; }
 .ss-btn { font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 7px; cursor: pointer;
@@ -247,6 +253,12 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
     return input
   }
 
+  const fit = el('select', {}) as HTMLSelectElement
+  for (const value of FITS) fit.append(el('option', { value }, FIT_LABELS[value]))
+  fit.addEventListener('change', () => { set('imageFit', fit.value as SkinConfig['imageFit']) })
+  root.appendChild(el('div', { class: 'ss-row' }, el('label', {}, '适配'),
+    el('div', { class: 'ss-ctl' }, fit)))
+
   // 三个滑块合起来才决定「背景看得清不清楚」，先给一键档位，再让人微调
   const levels = el('div', { class: 'ss-presets' })
   levels.appendChild(el('span', { class: 'ss-level-label' }, '强度'))
@@ -274,6 +286,9 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
   save.addEventListener('click', () => {
     save.textContent = '保存中…'
     void Promise.resolve(options.onSave(config)).then(() => {
+      // 保存成功就收工——效果早在预览时就看到了，留在原地还得再点一次关闭。
+      // 失败则留着面板，让用户看得到原因、也不至于丢掉刚调好的参数。
+      options.onDone?.()
       save.textContent = '已保存'
       setTimeout(() => { save.textContent = '保存' }, 1600)
     }).catch(() => { save.textContent = '保存失败' })
@@ -291,6 +306,7 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
     accent.value = config.accent
     bgDark.value = config.bgDark
     bgLight.value = config.bgLight
+    fit.value = config.imageFit
     syncThumb()
     for (const [input, value] of [
       [imageOpacity, config.imageOpacity], [imageBlur, config.imageBlur],

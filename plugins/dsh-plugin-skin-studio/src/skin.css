@@ -29,6 +29,10 @@
   --skin-image-opacity: 0.5;
   --skin-image-blur: 0px;
   --skin-image-scale: 1;
+  /* 适配方式，由插件按用户设置写入；默认填满窗口 */
+  --skin-image-size: cover;
+  --skin-image-repeat: no-repeat;
+  --skin-video-fit: cover;
   --skin-position-x: 50%;
   --skin-position-y: 50%;
   /* 主图下面再垫一层放大模糊的同图，边缘不会露出硬边 */
@@ -98,14 +102,15 @@ html.skin-studio body {
   pointer-events: none;
   background-image: var(--skin-image);
   background-position: var(--skin-position-x) var(--skin-position-y);
-  background-repeat: no-repeat;
 }
 
 /* 垫底的放大模糊层：向外溢出 5% 并轻微放大，四周不会出现硬边 */
 #skin-studio-art > .skin-backdrop {
   inset: -5%;
   left: calc(-5% - var(--skin-inset-left));
+  /* 这层始终填满：它的职责就是补上「完整显示」时四周的留白、并挡住硬边 */
   background-size: cover;
+  background-repeat: no-repeat;
   opacity: var(--skin-backdrop-opacity);
   filter: blur(var(--skin-backdrop-blur));
   transform: scale(1.06);
@@ -115,7 +120,8 @@ html.skin-studio body {
   inset: 0;
   left: calc(-1 * var(--skin-inset-left));
   z-index: 1;
-  background-size: cover;
+  background-size: var(--skin-image-size);
+  background-repeat: var(--skin-image-repeat);
   opacity: var(--skin-image-opacity);
   filter: blur(var(--skin-image-blur));
   transform: scale(var(--skin-image-scale));
@@ -136,7 +142,7 @@ html.skin-studio body {
   left: calc(-1 * var(--skin-inset-left));
   z-index: 1;
   display: none;
-  object-fit: cover;
+  object-fit: var(--skin-video-fit);
   opacity: var(--skin-image-opacity);
   filter: blur(var(--skin-image-blur));
   transform: scale(var(--skin-image-scale));

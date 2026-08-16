@@ -40,6 +40,7 @@ var DEFAULT_CONFIG = {
   image: "",
   videoId: "",
   videoName: "",
+  imageFit: "cover",
   imageOpacity: 0.5,
   imageBlur: 0,
   transparency: 0.8,
@@ -57,6 +58,13 @@ var BACKGROUND_LEVELS = [
   { id: "medium", name: "\u9002\u4E2D", patch: { imageOpacity: 0.68, wash: 0.4, transparency: 0.75 } },
   { id: "clear", name: "\u6E05\u6670", patch: { imageOpacity: 1, wash: 0.12, transparency: 1 } }
 ];
+var FITS = ["cover", "contain", "tile", "stretch"];
+var FIT_LABELS = {
+  cover: "\u586B\u6EE1\u7A97\u53E3\uFF08\u53EF\u80FD\u88C1\u8FB9\uFF09",
+  contain: "\u5B8C\u6574\u663E\u793A\uFF08\u56DB\u5468\u7559\u8FB9\uFF09",
+  tile: "\u5E73\u94FA",
+  stretch: "\u62C9\u4F38\u94FA\u6EE1\uFF08\u4F1A\u53D8\u5F62\uFF09"
+};
 function normalizeConfig(raw) {
   const input = typeof raw === "object" && raw !== null ? raw : {};
   const clamp = (value, min, max, fallback) => {
@@ -74,6 +82,7 @@ function normalizeConfig(raw) {
     // id 由本插件生成，限定字符集，免得被拿去当 IndexedDB 的任意键用
     videoId: typeof input.videoId === "string" && /^[a-z0-9-]{1,64}$/i.test(input.videoId) ? input.videoId : "",
     videoName: typeof input.videoName === "string" ? input.videoName.slice(0, 120) : "",
+    imageFit: FITS.includes(input.imageFit) ? input.imageFit : DEFAULT_CONFIG.imageFit,
     imageOpacity: clamp(input.imageOpacity, 0, 1, DEFAULT_CONFIG.imageOpacity),
     imageBlur: clamp(input.imageBlur, 0, 40, DEFAULT_CONFIG.imageBlur),
     transparency: clamp(input.transparency, 0, 1, DEFAULT_CONFIG.transparency),
@@ -135,6 +144,12 @@ var STYLE_ID = "skin-studio-css";
 var ART_ID = "skin-studio-art";
 var VIDEO_ID = "skin-studio-video";
 var DARK_ATTR = "data-ds-dark-theme";
+var FIT_STYLE = {
+  cover: { size: "cover", repeat: "no-repeat", object: "cover" },
+  contain: { size: "contain", repeat: "no-repeat", object: "contain" },
+  tile: { size: "auto", repeat: "repeat", object: "cover" },
+  stretch: { size: "100% 100%", repeat: "no-repeat", object: "fill" }
+};
 function ensureStyle(css) {
   let style = document.getElementById(STYLE_ID);
   if (style === null) {
@@ -230,6 +245,10 @@ function createSkinRuntime(css) {
     style.setProperty("--skin-accent", current.accent);
     style.setProperty("--skin-bg", dark ? current.bgDark : current.bgLight);
     style.setProperty("--skin-image", current.image === "" ? "none" : `url("${current.image}")`);
+    const fit = FIT_STYLE[current.imageFit] ?? FIT_STYLE.cover;
+    style.setProperty("--skin-image-size", fit.size);
+    style.setProperty("--skin-image-repeat", fit.repeat);
+    style.setProperty("--skin-video-fit", fit.object);
     style.setProperty("--skin-image-opacity", String(current.imageOpacity));
     style.setProperty("--skin-image-blur", `${String(current.imageBlur)}px`);
     style.setProperty("--skin-transparency", String(current.transparency));
@@ -275,7 +294,10 @@ function createSkinRuntime(css) {
         "--skin-image-blur",
         "--skin-transparency",
         "--skin-wash",
-        "--skin-backdrop-opacity"
+        "--skin-backdrop-opacity",
+        "--skin-image-size",
+        "--skin-image-repeat",
+        "--skin-video-fit"
       ]) {
         root.style.removeProperty(name);
       }
@@ -308,6 +330,8 @@ var CSS = `
 .ss-val { flex: 0 0 42px; text-align: right; font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-tertiary, inherit); font-size: 12px; }
 .ss-panel input[type=range] { flex: 1; accent-color: var(--skin-accent, #d3aa61); min-width: 0; }
+.ss-panel select { flex: 1; font: inherit; font-size: 12px; padding: 5px 8px; border-radius: 7px;
+  border: 1px solid var(--dsw-alias-border-l2, #8883); background: transparent; color: inherit; }
 .ss-panel input[type=color] { width: 34px; height: 26px; padding: 0; border: 1px solid var(--dsw-alias-border-l2, #8883);
   border-radius: 6px; background: none; cursor: pointer; }
 .ss-btn { font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 7px; cursor: pointer;
@@ -527,6 +551,17 @@ function createSkinPanel(options) {
     input.sync = update;
     return input;
   };
+  const fit = el("select", {});
+  for (const value of FITS) fit.append(el("option", { value }, FIT_LABELS[value]));
+  fit.addEventListener("change", () => {
+    set("imageFit", fit.value);
+  });
+  root.appendChild(el(
+    "div",
+    { class: "ss-row" },
+    el("label", {}, "\u9002\u914D"),
+    el("div", { class: "ss-ctl" }, fit)
+  ));
   const levels = el("div", { class: "ss-presets" });
   levels.appendChild(el("span", { class: "ss-level-label" }, "\u5F3A\u5EA6"));
   for (const level of BACKGROUND_LEVELS) {
@@ -550,6 +585,7 @@ function createSkinPanel(options) {
   save2.addEventListener("click", () => {
     save2.textContent = "\u4FDD\u5B58\u4E2D\u2026";
     void Promise.resolve(options.onSave(config)).then(() => {
+      options.onDone?.();
       save2.textContent = "\u5DF2\u4FDD\u5B58";
       setTimeout(() => {
         save2.textContent = "\u4FDD\u5B58";
@@ -569,6 +605,7 @@ function createSkinPanel(options) {
     accent.value = config.accent;
     bgDark.value = config.bgDark;
     bgLight.value = config.bgLight;
+    fit.value = config.imageFit;
     syncThumb();
     for (const [input, value] of [
       [imageOpacity, config.imageOpacity],
@@ -974,6 +1011,10 @@ var skin_default = `/*
   --skin-image-opacity: 0.5;
   --skin-image-blur: 0px;
   --skin-image-scale: 1;
+  /* \u9002\u914D\u65B9\u5F0F\uFF0C\u7531\u63D2\u4EF6\u6309\u7528\u6237\u8BBE\u7F6E\u5199\u5165\uFF1B\u9ED8\u8BA4\u586B\u6EE1\u7A97\u53E3 */
+  --skin-image-size: cover;
+  --skin-image-repeat: no-repeat;
+  --skin-video-fit: cover;
   --skin-position-x: 50%;
   --skin-position-y: 50%;
   /* \u4E3B\u56FE\u4E0B\u9762\u518D\u57AB\u4E00\u5C42\u653E\u5927\u6A21\u7CCA\u7684\u540C\u56FE\uFF0C\u8FB9\u7F18\u4E0D\u4F1A\u9732\u51FA\u786C\u8FB9 */
@@ -1043,14 +1084,15 @@ html.skin-studio body {
   pointer-events: none;
   background-image: var(--skin-image);
   background-position: var(--skin-position-x) var(--skin-position-y);
-  background-repeat: no-repeat;
 }
 
 /* \u57AB\u5E95\u7684\u653E\u5927\u6A21\u7CCA\u5C42\uFF1A\u5411\u5916\u6EA2\u51FA 5% \u5E76\u8F7B\u5FAE\u653E\u5927\uFF0C\u56DB\u5468\u4E0D\u4F1A\u51FA\u73B0\u786C\u8FB9 */
 #skin-studio-art > .skin-backdrop {
   inset: -5%;
   left: calc(-5% - var(--skin-inset-left));
+  /* \u8FD9\u5C42\u59CB\u7EC8\u586B\u6EE1\uFF1A\u5B83\u7684\u804C\u8D23\u5C31\u662F\u8865\u4E0A\u300C\u5B8C\u6574\u663E\u793A\u300D\u65F6\u56DB\u5468\u7684\u7559\u767D\u3001\u5E76\u6321\u4F4F\u786C\u8FB9 */
   background-size: cover;
+  background-repeat: no-repeat;
   opacity: var(--skin-backdrop-opacity);
   filter: blur(var(--skin-backdrop-blur));
   transform: scale(1.06);
@@ -1060,7 +1102,8 @@ html.skin-studio body {
   inset: 0;
   left: calc(-1 * var(--skin-inset-left));
   z-index: 1;
-  background-size: cover;
+  background-size: var(--skin-image-size);
+  background-repeat: var(--skin-image-repeat);
   opacity: var(--skin-image-opacity);
   filter: blur(var(--skin-image-blur));
   transform: scale(var(--skin-image-scale));
@@ -1081,7 +1124,7 @@ html.skin-studio body {
   left: calc(-1 * var(--skin-inset-left));
   z-index: 1;
   display: none;
-  object-fit: cover;
+  object-fit: var(--skin-video-fit);
   opacity: var(--skin-image-opacity);
   filter: blur(var(--skin-image-blur));
   transform: scale(var(--skin-image-scale));
@@ -1357,7 +1400,8 @@ function openSkinPanel(runtime) {
     },
     onSave: (config) => {
       save(config);
-    }
+    },
+    onDone: close
   }));
   dialog.append(head, scroll);
   mask.appendChild(dialog);

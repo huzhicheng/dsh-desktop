@@ -19,6 +19,14 @@ export interface SkinConfig {
   videoId: string
   /** 视频文件名，仅用于界面回显。 */
   videoName: string
+  /**
+   * 背景适配方式。
+   *
+   * cover 填满窗口、会裁掉伸出去的部分（竖图在宽窗口里只剩一条横切片）；
+   * contain 完整显示、四周留边（留白处由那层放大模糊的同图垫底）；
+   * tile 原尺寸平铺，适合纹理小图；stretch 硬拉到窗口大小，会变形。
+   */
+  imageFit: 'cover' | 'contain' | 'tile' | 'stretch'
   /** 背景（图或视频）不透明度 0~1。 */
   imageOpacity: number
   /** 背景（图或视频）模糊半径（像素）。 */
@@ -40,6 +48,7 @@ export const DEFAULT_CONFIG: SkinConfig = {
   image: '',
   videoId: '',
   videoName: '',
+  imageFit: 'cover',
   imageOpacity: 0.5,
   imageBlur: 0,
   transparency: 0.8,
@@ -74,6 +83,17 @@ export const BACKGROUND_LEVELS: readonly SkinPreset[] = [
   { id: 'clear', name: '清晰', patch: { imageOpacity: 1, wash: 0.12, transparency: 1 } },
 ]
 
+/** 适配方式的合法取值，兼作界面上的选项来源。 */
+export const FITS: readonly SkinConfig['imageFit'][] = ['cover', 'contain', 'tile', 'stretch']
+
+/** 适配方式的中文名，界面直接用。 */
+export const FIT_LABELS: Record<SkinConfig['imageFit'], string> = {
+  cover: '填满窗口（可能裁边）',
+  contain: '完整显示（四周留边）',
+  tile: '平铺',
+  stretch: '拉伸铺满（会变形）',
+}
+
 /** 合并用户配置与默认值，并把越界值夹回合法范围。 */
 export function normalizeConfig(raw: unknown): SkinConfig {
   const input = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<SkinConfig>
@@ -94,6 +114,9 @@ export function normalizeConfig(raw: unknown): SkinConfig {
     // id 由本插件生成，限定字符集，免得被拿去当 IndexedDB 的任意键用
     videoId: typeof input.videoId === 'string' && /^[a-z0-9-]{1,64}$/i.test(input.videoId) ? input.videoId : '',
     videoName: typeof input.videoName === 'string' ? input.videoName.slice(0, 120) : '',
+    imageFit: FITS.includes(input.imageFit as SkinConfig['imageFit'])
+      ? input.imageFit as SkinConfig['imageFit']
+      : DEFAULT_CONFIG.imageFit,
     imageOpacity: clamp(input.imageOpacity, 0, 1, DEFAULT_CONFIG.imageOpacity),
     imageBlur: clamp(input.imageBlur, 0, 40, DEFAULT_CONFIG.imageBlur),
     transparency: clamp(input.transparency, 0, 1, DEFAULT_CONFIG.transparency),
