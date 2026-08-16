@@ -1,6 +1,8 @@
 /** 系统托盘：常驻入口，展示版本、触发升级检查、退出。图标为运行时绘制的模板图。 */
 
-import { Menu, Tray, nativeImage } from 'electron'
+import { join } from 'node:path'
+import { Menu, Tray, app, nativeImage } from 'electron'
+import { log } from './logger'
 import { APP_DISPLAY_NAME } from './config'
 import type { UpdatePhase } from './updater'
 
@@ -19,51 +21,30 @@ export interface TrayDeps {
 let tray: Tray | undefined
 
 /**
- * 画一个 18x18 的图标（免去图片资源）：圆角方框内一个实心圆点。
- * macOS 用黑色模板图（系统自动适配深浅色菜单栏）；
- * Windows 没有模板图机制，用品牌蓝，在深浅色任务栏上都可见。
+ * 菜单栏图标：读 resources/trayTemplate.png（由 npm run icons 从 assets/tray.svg 生成）。
+ *
+ * macOS 要求菜单栏图标是「模板图」（纯黑 + 透明），系统据此自动适配深浅色，
+ * 所以这里用的是单色鲸鱼剪影而不是彩色 logo——那张插画缩到 16pt 会糊成色块。
+ * Windows 没有模板图机制，同一张黑色剪影在浅色任务栏上也清晰。
+ *
+ * 取不到文件时退回空图：宁可菜单栏图标是空的，也不该让托盘创建失败、
+ * 导致用户连退出菜单都没有。
  */
-function drawTrayIcon(): Electron.NativeImage {
-  const size = 18
-  // nativeImage.createFromBitmap 使用 BGRA 字节序
-  const [blue, green, red] = process.platform === 'darwin' ? [0, 0, 0] : [254, 107, 77]
-  const buffer = Buffer.alloc(size * size * 4, 0)
-  const put = (x: number, y: number, alpha: number): void => {
-    if (x < 0 || y < 0 || x >= size || y >= size) return
-    const index = (y * size + x) * 4
-    buffer[index] = blue
-    buffer[index + 1] = green
-    buffer[index + 2] = red
-    buffer[index + 3] = Math.max(buffer[index + 3] ?? 0, Math.round(alpha * 255))
+function trayIcon(): Electron.NativeImage {
+  const file = app.isPackaged
+    ? join(process.resourcesPath, 'trayTemplate.png')
+    : join(__dirname, '../../resources/trayTemplate.png')
+  const image = nativeImage.createFromPath(file)
+  if (image.isEmpty()) {
+    log.warn(`菜单栏图标缺失：${file}`)
+    return nativeImage.createEmpty()
   }
-  // 圆角矩形边框
-  const min = 2
-  const max = size - 3
-  for (let i = min + 2; i <= max - 2; i++) {
-    put(i, min, 1)
-    put(i, max, 1)
-    put(min, i, 1)
-    put(max, i, 1)
-  }
-  for (const [cx, cy] of [[min + 1, min + 1], [max - 1, min + 1], [min + 1, max - 1], [max - 1, max - 1]] as const) {
-    put(cx, cy, 0.9)
-  }
-  // 中心圆点
-  const center = (size - 1) / 2
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const distance = Math.hypot(x - center, y - center)
-      if (distance <= 2.4) put(x, y, 1)
-      else if (distance <= 3.1) put(x, y, 3.1 - distance)
-    }
-  }
-  const image = nativeImage.createFromBitmap(buffer, { width: size, height: size })
   if (process.platform === 'darwin') image.setTemplateImage(true)
   return image
 }
 
 export function createTray(deps: TrayDeps): void {
-  tray = new Tray(drawTrayIcon())
+  tray = new Tray(trayIcon())
   tray.setToolTip(APP_DISPLAY_NAME)
   refreshTray(deps)
   tray.on('click', () => { deps.openMainWindow() })

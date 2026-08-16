@@ -1,25 +1,32 @@
 /**
- * 由 assets/*.svg 生成全部图标产物。
+ * 由 assets/ 里的源文件生成全部图标产物。
  *
- * 产出：
- *   build/icon.png        1024px 应用图标（electron-builder 的 mac/win 默认输入）
- *   build/icon.icns       macOS 图标集（用系统自带 iconutil 生成）
- *   resources/trayTemplate.png / @2x.png   菜单栏模板图（黑+透明）
+ * 输入：
+ *   assets/logo.png   应用图标原图（正方形、四角透明）
+ *   assets/tray.svg   菜单栏单色图（纯黑 + 透明，macOS 模板图要求）
  *
- * 用 Electron 渲染 SVG 而不是引入 sharp/resvg：应用本来就带 Electron，
- * 不必为出图再多一个原生依赖；透明窗口截图能保住 alpha 通道。
+ * 产出（都会提交进仓库，CI 不重新生成）：
+ *   build/icon.png                        1024px，electron-builder 据此
+ *                                         自动派生 macOS 的 .icns 与 Windows 的 .ico
+ *   resources/trayTemplate.png / @2x.png  菜单栏图标
+ *
+ * 位图缩放走 Electron 自带的 nativeImage，不引入 sharp/PIL：应用本来就带
+ * Electron，不必为出图多一个原生依赖，而且 resize 给的是精确像素，
+ * 不受这台机器的屏幕缩放影响（用窗口截图会在 Retina 上得到двойной尺寸）。
+ *
+ * SVG 只能靠浏览器栅格化，所以走一次离屏窗口；注意 SVG 必须内联，
+ * `data:` URL 文档里的 <img src="file://…"> 会被安全策略挡掉、渲染成全透明。
  *
  * 用法：npm run icons
  */
-import { app, BrowserWindow } from 'electron'
-import { execFileSync } from 'node:child_process'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { app, BrowserWindow, nativeImage } from 'electron'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
 
-/** 一次渲染任务：把某个 SVG 铺满 size×size 并截成 PNG。 */
-async function render(svg, size, outFile) {
+/** 把内联 SVG 栅格化成指定边长的 PNG 缓冲。 */
+async function rasterizeSvg(svg, size) {
   const window = new BrowserWindow({
     width: size,
     height: size,
@@ -28,54 +35,55 @@ async function render(svg, size, outFile) {
     transparent: true,
     backgroundColor: '#00000000',
     useContentSize: true,
-    webPreferences: { offscreen: false },
   })
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
     html,body{margin:0;padding:0;width:${size}px;height:${size}px;background:transparent;overflow:hidden}
     svg{display:block;width:${size}px;height:${size}px}
   </style></head><body>${svg}</body></html>`
   await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
-  // 等一帧，确保矢量已经栅格化完成
-  await new Promise(resolveWait => { setTimeout(resolveWait, 120) })
+  await new Promise((done) => { setTimeout(done, 200) })
   const image = await window.webContents.capturePage()
-  await writeFile(outFile, image.toPNG())
   window.destroy()
+  return image
 }
 
 async function main() {
-  const logo = await readFile(join(ROOT, 'assets/logo.svg'), 'utf8')
-  const mono = await readFile(join(ROOT, 'assets/logo-mono.svg'), 'utf8')
   await mkdir(join(ROOT, 'build'), { recursive: true })
   await mkdir(join(ROOT, 'resources'), { recursive: true })
 
-  // 应用图标：electron-builder 要求至少 512，给足 1024
-  await render(logo, 1024, join(ROOT, 'build/icon.png'))
+  // 应用图标：1024 是 electron-builder 推荐的输入尺寸，派生各档不会糊
+  const logo = nativeImage.createFromPath(join(ROOT, 'assets/logo.png'))
+  if (logo.isEmpty()) throw new Error('读不到 assets/logo.png')
+  const { width, height } = logo.getSize()
+  if (width !== height) throw new Error(`应用图标必须是正方形，当前 ${String(width)}×${String(height)}`)
+  await writeFile(
+    join(ROOT, 'build/icon.png'),
+    logo.resize({ width: 1024, height: 1024, quality: 'best' }).toPNG(),
+  )
 
-  // 菜单栏模板图：16pt，Retina 下取 @2x
-  await render(mono, 16, join(ROOT, 'resources/trayTemplate.png'))
-  await render(mono, 32, join(ROOT, 'resources/trayTemplate@2x.png'))
-
-  // macOS 图标集：iconutil 是系统自带的，不必额外装东西
-  if (process.platform === 'darwin') {
-    const iconset = join(ROOT, 'build/icon.iconset')
-    await rm(iconset, { recursive: true, force: true })
-    await mkdir(iconset, { recursive: true })
-    // Apple 要求的完整尺寸表；缺任何一档 iconutil 都会拒绝
-    const sizes = [16, 32, 64, 128, 256, 512, 1024]
-    for (const size of sizes) {
-      await render(logo, size, join(iconset, `icon_${String(size)}x${String(size)}.png`))
-      if (size >= 32) {
-        await render(logo, size, join(iconset, `icon_${String(size / 2)}x${String(size / 2)}@2x.png`))
-      }
-    }
-    execFileSync('iconutil', ['-c', 'icns', iconset, '-o', join(ROOT, 'build/icon.icns')])
-    await rm(iconset, { recursive: true, force: true })
+  // 菜单栏图标：先按较大尺寸栅格化，再缩到 16/32，边缘比直接小尺寸渲染干净
+  const svg = await readFile(join(ROOT, 'assets/tray.svg'), 'utf8')
+  const trayLarge = await rasterizeSvg(svg, 256)
+  for (const [size, name] of [[16, 'trayTemplate.png'], [32, 'trayTemplate@2x.png']]) {
+    await writeFile(
+      join(ROOT, 'resources', name),
+      trayLarge.resize({ width: size, height: size, quality: 'best' }).toPNG(),
+    )
   }
 
-  console.log('图标已生成：build/icon.png、build/icon.icns、resources/trayTemplate*.png')
+  process.stdout.write('图标已生成：build/icon.png、resources/trayTemplate.png(@2x)\n')
 }
 
-app.whenReady().then(main).then(() => { app.exit(0) }).catch((error) => {
-  console.error(error)
-  app.exit(1)
-})
+// 离屏窗口销毁后不要让 Electron 走默认的自动退出：那会在剩余写入
+// 与日志刷出之前就开始拆进程（表现为最后一个文件被截成 0 字节）。
+app.on('window-all-closed', () => { /* 由 main 决定何时退出 */ })
+
+app.whenReady()
+  .then(main)
+  // 先让 stdout 刷出去再退出：app.exit() 是立即终止，日志会丢
+  .then(() => new Promise((done) => { setTimeout(done, 50) }))
+  .then(() => { app.exit(0) })
+  .catch((error) => {
+    process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`)
+    setTimeout(() => { app.exit(1) }, 50)
+  })

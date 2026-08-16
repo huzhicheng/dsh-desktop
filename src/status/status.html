@@ -36,14 +36,7 @@
       padding: 24px;
       text-align: center;
     }
-    .logo {
-      width: 44px; height: 44px;
-      border-radius: 12px;
-      background: var(--accent);
-      display: flex; align-items: center; justify-content: center;
-      color: var(--accent-ink); font-weight: 700; font-size: 18px;
-      letter-spacing: 0.5px;
-    }
+    .logo { width: 56px; height: 56px; display: block; }
     .title { font-size: 15px; font-weight: 600; }
     .message { font-size: 13px; color: var(--muted); min-height: 18px; max-width: 360px; }
     .spinner {
@@ -59,7 +52,7 @@
   </style>
 </head>
 <body>
-  <div class="logo">DS</div>
+  <img class="logo" src="logo.png" alt="">
   <div class="title">DSH Desktop</div>
   <div class="spinner"></div>
   <div class="message" id="message">正在启动…</div>

@@ -14,6 +14,8 @@ npmRebuild: false
 mac:
   category: public.app-category.developer-tools
   identity: null
+  # 只给 1024 的 PNG，.icns 由 electron-builder 自动派生
+  icon: build/icon.png
   target:
     - target: dmg
       arch: [arm64]
@@ -32,8 +34,15 @@ mac:
     # 种子版 Harness 运行时（首启解压，之后走应用内在线升级）
     - from: vendor/seed/darwin-arm64
       to: seed
+    # 菜单栏图标（tray.ts 从 resourcesPath 读）
+    - from: resources/trayTemplate.png
+      to: trayTemplate.png
+    - from: resources/trayTemplate@2x.png
+      to: trayTemplate@2x.png
 
 win:
+  # 同 mac：只给 1024 的 PNG，.ico 由 electron-builder 自动派生
+  icon: build/icon.png
   # nsis 只能在 Windows（或装了 Wine 的机器）上构建，否则卸载器会是坏的，
   # scripts/check-win-build.mjs 会拦截；zip 为免安装版，任何平台都能出。
   target:
@@ -60,6 +69,10 @@ win:
         - "**/*"
     - from: vendor/seed/win32-x64
       to: seed
+    - from: resources/trayTemplate.png
+      to: trayTemplate.png
+    - from: resources/trayTemplate@2x.png
+      to: trayTemplate@2x.png
 
 nsis:
   oneClick: false

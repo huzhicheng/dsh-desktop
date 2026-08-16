@@ -46,6 +46,8 @@ for (const name of ['status', 'settings', 'desktop']) {
 
 await mkdir(join(DIST, 'status'), { recursive: true })
 await cp(join(ROOT, 'src/status/status.html'), join(DIST, 'status/status.html'))
+// 启动窗口要显示的 logo，跟着 html 一起进 dist
+await cp(join(ROOT, 'assets/logo.png'), join(DIST, 'status/logo.png'))
 await mkdir(join(DIST, 'settings'), { recursive: true })
 await cp(join(ROOT, 'src/settings/settings.html'), join(DIST, 'settings/settings.html'))
 
