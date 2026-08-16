@@ -20,7 +20,7 @@
 在项目目录执行：
 
 ```sh
-cd /Users/moon/products/deepseek-herness-app
+cd /path/to/dsh-desktop
 npm install
 npm run prepare:node
 npm run prepare:win
