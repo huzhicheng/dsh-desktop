@@ -38,6 +38,8 @@ var DEFAULT_CONFIG = {
   bgDark: "#171817",
   bgLight: "#f6f5f1",
   image: "",
+  videoId: "",
+  videoName: "",
   imageOpacity: 0.5,
   imageBlur: 0,
   transparency: 0.8,
@@ -64,6 +66,9 @@ function normalizeConfig(raw) {
     bgLight: color(input.bgLight, DEFAULT_CONFIG.bgLight),
     // 背景图只接受 data URI：外链会把用户的界面暴露给第三方站点
     image: typeof input.image === "string" && input.image.startsWith("data:image/") ? input.image : "",
+    // id 由本插件生成，限定字符集，免得被拿去当 IndexedDB 的任意键用
+    videoId: typeof input.videoId === "string" && /^[a-z0-9-]{1,64}$/i.test(input.videoId) ? input.videoId : "",
+    videoName: typeof input.videoName === "string" ? input.videoName.slice(0, 120) : "",
     imageOpacity: clamp(input.imageOpacity, 0, 1, DEFAULT_CONFIG.imageOpacity),
     imageBlur: clamp(input.imageBlur, 0, 40, DEFAULT_CONFIG.imageBlur),
     transparency: clamp(input.transparency, 0, 1, DEFAULT_CONFIG.transparency),
@@ -71,9 +76,59 @@ function normalizeConfig(raw) {
   };
 }
 
+// src/video-store.ts
+var DB_NAME = "dsh-skin-studio";
+var DB_VERSION = 1;
+var STORE = "background";
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(STORE)) request.result.createObjectStore(STORE);
+    };
+    request.onsuccess = () => {
+      resolve(request.result);
+    };
+    request.onerror = () => {
+      reject(request.error ?? new Error("\u65E0\u6CD5\u6253\u5F00\u672C\u5730\u6570\u636E\u5E93"));
+    };
+  });
+}
+async function withStore(mode, run) {
+  const db = await openDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const request = run(db.transaction(STORE, mode).objectStore(STORE));
+      request.onsuccess = () => {
+        resolve(request.result);
+      };
+      request.onerror = () => {
+        reject(request.error ?? new Error("\u672C\u5730\u6570\u636E\u5E93\u8BFB\u5199\u5931\u8D25"));
+      };
+    });
+  } finally {
+    db.close();
+  }
+}
+async function putVideo(id, blob) {
+  await withStore("readwrite", (store) => store.put(blob, id));
+}
+async function getVideo(id) {
+  const value = await withStore("readonly", (store) => store.get(id));
+  return value instanceof Blob ? value : void 0;
+}
+async function pruneVideos(keepId) {
+  const keys = await withStore("readonly", (store) => store.getAllKeys());
+  for (const key of keys) {
+    if (String(key) === keepId) continue;
+    await withStore("readwrite", (store) => store.delete(key));
+  }
+}
+
 // src/runtime.ts
 var STYLE_ID = "skin-studio-css";
 var ART_ID = "skin-studio-art";
+var VIDEO_ID = "skin-studio-video";
 var DARK_ATTR = "data-ds-dark-theme";
 function ensureStyle(css) {
   let style = document.getElementById(STYLE_ID);
@@ -88,11 +143,24 @@ function ensureArtLayer() {
   if (document.getElementById(ART_ID) !== null) return;
   const art = document.createElement("div");
   art.id = ART_ID;
-  for (const className of ["skin-backdrop", "skin-canvas", "skin-wash"]) {
+  for (const className of ["skin-backdrop", "skin-canvas"]) {
     const layer = document.createElement("div");
     layer.className = className;
     art.appendChild(layer);
   }
+  const video = document.createElement("video");
+  video.id = VIDEO_ID;
+  video.className = "skin-video";
+  video.muted = true;
+  video.defaultMuted = true;
+  video.loop = true;
+  video.autoplay = true;
+  video.playsInline = true;
+  video.setAttribute("disableRemotePlayback", "");
+  art.appendChild(video);
+  const wash = document.createElement("div");
+  wash.className = "skin-wash";
+  art.appendChild(wash);
   document.body.appendChild(art);
 }
 function isDark() {
@@ -109,6 +177,45 @@ function washColor(config, dark) {
 function createSkinRuntime(css) {
   let current;
   let observer;
+  let objectUrl;
+  let loadedVideoId = "";
+  const releaseUrl = () => {
+    if (objectUrl !== void 0) URL.revokeObjectURL(objectUrl);
+    objectUrl = void 0;
+  };
+  const videoElement = () => document.getElementById(VIDEO_ID);
+  const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const syncVideo = (config) => {
+    const video = videoElement();
+    if (video === null) return;
+    if (config.videoId === "") {
+      loadedVideoId = "";
+      video.removeAttribute("src");
+      video.load();
+      releaseUrl();
+      return;
+    }
+    if (config.videoId === loadedVideoId) return;
+    loadedVideoId = config.videoId;
+    void getVideo(config.videoId).then((blob) => {
+      if (blob === void 0 || loadedVideoId !== config.videoId) return;
+      releaseUrl();
+      objectUrl = URL.createObjectURL(blob);
+      video.src = objectUrl;
+      if (reduceMotion()) return;
+      void video.play().catch(() => {
+      });
+    }).catch((error) => {
+      console.warn("skin-studio: \u80CC\u666F\u89C6\u9891\u52A0\u8F7D\u5931\u8D25", error);
+    });
+  };
+  const handleVisibility = () => {
+    const video = videoElement();
+    if (video === null || video.getAttribute("src") === null) return;
+    if (document.hidden) video.pause();
+    else if (!reduceMotion()) void video.play().catch(() => {
+    });
+  };
   const paint = () => {
     if (current === void 0) return;
     const root = document.documentElement;
@@ -123,6 +230,8 @@ function createSkinRuntime(css) {
     style.setProperty("--skin-transparency", String(current.transparency));
     style.setProperty("--skin-wash", washColor(current, dark));
     style.setProperty("--skin-backdrop-opacity", current.image === "" ? "0" : "0.18");
+    root.dataset.skinBg = current.videoId !== "" ? "video" : current.image === "" ? "none" : "image";
+    syncVideo(current);
   };
   return {
     apply(config) {
@@ -138,16 +247,21 @@ function createSkinRuntime(css) {
       paint();
       observer ??= new MutationObserver(paint);
       observer.observe(document.body, { attributes: true, attributeFilter: [DARK_ATTR] });
+      document.addEventListener("visibilitychange", handleVisibility);
     },
     dispose() {
       observer?.disconnect();
       observer = void 0;
       current = void 0;
+      document.removeEventListener("visibilitychange", handleVisibility);
+      releaseUrl();
+      loadedVideoId = "";
       document.getElementById(ART_ID)?.remove();
       document.getElementById(STYLE_ID)?.remove();
       const root = document.documentElement;
       root.classList.remove("skin-studio");
       delete root.dataset.skinMode;
+      delete root.dataset.skinBg;
       for (const name of [
         "--skin-accent",
         "--skin-bg",
@@ -179,6 +293,7 @@ async function imageToDataUri(file, maxEdge = 1920, quality = 0.72) {
 }
 
 // src/panel.ts
+var MAX_VIDEO_BYTES = 200 * 1024 * 1024;
 var CSS = `
 .ss-panel { font-size: 13px; line-height: 1.6; color: var(--dsw-alias-label-primary, inherit); }
 .ss-panel h3 { font-size: 12px; font-weight: 650; margin: 0 0 10px; color: var(--dsw-alias-label-tertiary, inherit); }
@@ -200,8 +315,15 @@ var CSS = `
   border: 1px solid var(--dsw-alias-border-l2, #8883); border-radius: 999px; font-size: 12px; background: transparent; color: inherit; }
 .ss-preset:hover { border-color: var(--skin-accent, #d3aa61); }
 .ss-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
-.ss-thumb { width: 100%; height: 84px; border-radius: 9px; background-size: cover; background-position: center;
+.ss-thumb { position: relative; overflow: hidden; width: 100%; height: 84px; border-radius: 9px;
+  background-size: cover; background-position: center;
   border: 1px solid var(--dsw-alias-border-l2, #8883); margin-bottom: 10px; }
+.ss-thumb-video { display: none; width: 100%; height: 100%; object-fit: cover; }
+.ss-thumb.has-video .ss-thumb-video { display: block; }
+.ss-thumb-name { display: none; position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 8px;
+  font-size: 11px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,0.55));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ss-thumb.has-video .ss-thumb-name { display: block; }
 .ss-actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
 .ss-hint { color: var(--dsw-alias-label-caption, inherit); font-size: 11.5px; margin-left: auto; }
 .ss-switch { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
@@ -275,29 +397,99 @@ function createSkinPanel(options) {
   ));
   root.appendChild(el("h3", {}, "\u80CC\u666F"));
   const thumb = el("div", { class: "ss-thumb" });
+  const thumbVideo = el("video", {});
+  thumbVideo.className = "ss-thumb-video";
+  thumbVideo.muted = true;
+  thumbVideo.defaultMuted = true;
+  thumbVideo.loop = true;
+  thumbVideo.autoplay = true;
+  thumbVideo.playsInline = true;
+  const thumbName = el("div", { class: "ss-thumb-name" });
+  thumb.append(thumbVideo, thumbName);
   root.appendChild(thumb);
-  const file = el("input", { type: "file", accept: "image/*", hidden: "hidden" });
-  const pick = el("button", { class: "ss-btn", type: "button" }, "\u9009\u62E9\u56FE\u7247\u2026");
+  let thumbVideoId = "";
+  let thumbUrl;
+  const syncThumb = () => {
+    const hasVideo = config.videoId !== "";
+    thumb.classList.toggle("has-video", hasVideo);
+    thumb.style.backgroundImage = hasVideo || config.image === "" ? "none" : `url("${config.image}")`;
+    thumbName.textContent = config.videoName === "" ? "\u80CC\u666F\u89C6\u9891" : config.videoName;
+    if (!hasVideo) {
+      thumbVideoId = "";
+      thumbVideo.removeAttribute("src");
+      thumbVideo.load();
+      if (thumbUrl !== void 0) {
+        URL.revokeObjectURL(thumbUrl);
+        thumbUrl = void 0;
+      }
+      return;
+    }
+    if (thumbVideoId === config.videoId) return;
+    thumbVideoId = config.videoId;
+    void getVideo(config.videoId).then((blob) => {
+      if (blob === void 0 || thumbVideoId !== config.videoId) return;
+      if (thumbUrl !== void 0) URL.revokeObjectURL(thumbUrl);
+      thumbUrl = URL.createObjectURL(blob);
+      thumbVideo.src = thumbUrl;
+      void thumbVideo.play().catch(() => {
+      });
+    }).catch(() => {
+      status.textContent = "\u9884\u89C8\u52A0\u8F7D\u5931\u8D25";
+    });
+  };
+  const file = el("input", {
+    type: "file",
+    accept: "image/*,video/mp4,video/webm",
+    hidden: "hidden"
+  });
+  const pick = el("button", { class: "ss-btn", type: "button" }, "\u9009\u62E9\u56FE\u7247\u6216\u89C6\u9891\u2026");
   const clear = el("button", { class: "ss-btn", type: "button" }, "\u6E05\u9664");
   const status = el("span", { class: "ss-hint" }, "");
   pick.addEventListener("click", () => {
     file.click();
   });
+  const megabytes = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  const takeVideo = (chosen) => {
+    if (chosen.size > MAX_VIDEO_BYTES) {
+      status.textContent = `\u89C6\u9891 ${megabytes(chosen.size)}\uFF0C\u8D85\u8FC7\u4E0A\u9650 ${megabytes(MAX_VIDEO_BYTES)}`;
+      return;
+    }
+    status.textContent = "\u4FDD\u5B58\u4E2D\u2026";
+    const id = `bg-${String(Date.now())}`;
+    void putVideo(id, chosen).then(() => {
+      config = { ...config, videoId: id, videoName: chosen.name, image: "" };
+      syncInputs();
+      preview();
+      status.textContent = `\u5DF2\u4FDD\u5B58 ${megabytes(chosen.size)}`;
+      void pruneVideos(id);
+    }).catch((error) => {
+      status.textContent = `\u4FDD\u5B58\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`;
+    });
+  };
   file.addEventListener("change", () => {
     const chosen = file.files?.[0];
     if (chosen === void 0) return;
+    file.value = "";
+    if (chosen.type.startsWith("video/")) {
+      takeVideo(chosen);
+      return;
+    }
     status.textContent = "\u5904\u7406\u4E2D\u2026";
     void imageToDataUri(chosen).then((uri) => {
-      set("image", uri);
+      config = { ...config, image: uri, videoId: "", videoName: "" };
       syncInputs();
+      preview();
+      void pruneVideos("");
       status.textContent = `\u5DF2\u538B\u7F29\u81F3 ${Math.round(uri.length / 1024)} KB`;
     }).catch((error) => {
       status.textContent = `\u8BFB\u53D6\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`;
     });
   });
   clear.addEventListener("click", () => {
-    set("image", "");
+    config = { ...config, image: "", videoId: "", videoName: "" };
     syncInputs();
+    preview();
+    void pruneVideos("");
     status.textContent = "";
   });
   root.appendChild(el(
@@ -330,8 +522,8 @@ function createSkinPanel(options) {
     return input;
   };
   const percent = (value) => `${String(Math.round(value * 100))}%`;
-  const imageOpacity = slider("\u56FE\u7247\u6D53\u5EA6", "imageOpacity", 0, 1, 0.01, percent);
-  const imageBlur = slider("\u56FE\u7247\u6A21\u7CCA", "imageBlur", 0, 40, 1, (v) => `${String(Math.round(v))}px`);
+  const imageOpacity = slider("\u80CC\u666F\u6D53\u5EA6", "imageOpacity", 0, 1, 0.01, percent);
+  const imageBlur = slider("\u80CC\u666F\u6A21\u7CCA", "imageBlur", 0, 40, 1, (v) => `${String(Math.round(v))}px`);
   const wash = slider("\u8499\u7248\u5F3A\u5EA6", "wash", 0, 1, 0.01, percent);
   const transparency = slider("\u754C\u9762\u900F\u660E", "transparency", 0, 1, 0.01, percent);
   const save2 = el("button", { class: "ss-btn primary", type: "button" }, "\u4FDD\u5B58");
@@ -359,9 +551,7 @@ function createSkinPanel(options) {
     accent.value = config.accent;
     bgDark.value = config.bgDark;
     bgLight.value = config.bgLight;
-    thumb.style.backgroundImage = config.image === "" ? "none" : `url("${config.image}")`;
-    thumb.style.background = config.image === "" ? "var(--skin-bg, #171817)" : thumb.style.background;
-    if (config.image !== "") thumb.style.backgroundImage = `url("${config.image}")`;
+    syncThumb();
     for (const [input, value] of [
       [imageOpacity, config.imageOpacity],
       [imageBlur, config.imageBlur],
@@ -735,7 +925,310 @@ function openPluginManager(settings = {}) {
 }
 
 // src/skin.css
-var skin_default = '/*\n * Skin Studio \u2014\u2014 DeepSeek Harness Web UI \u76AE\u80A4\u3002\n *\n * \u7ED3\u6784\u53C2\u8003 codex-skin-studio\uFF1A\u9875\u9762\u6700\u5E95\u5C42\u653E\u4E00\u4E2A\u56FA\u5B9A\u7684\u300C\u753B\u5E03\u5C42\u300D\u627F\u8F7D\u80CC\u666F\u56FE\uFF0C\n * \u754C\u9762\u4E0A\u6240\u6709\u8868\u9762\u6539\u6210\u534A\u900F\u660E\uFF0C\u80CC\u666F\u56FE\u4FBF\u4ECE\u4E0B\u9762\u900F\u4E0A\u6765\uFF1B\u900F\u5149\u5F3A\u5EA6\u7531 wash \u8499\u7248\n * \u4E0E\u5404\u8868\u9762\u7684 alpha \u63A7\u5236\u3002\n *\n * \u6362\u80A4\u53EA\u6539\u53D8\u91CF\uFF0C\u4E0D\u78B0 dsh \u7684\u4EFB\u4F55\u7ED3\u6784\u9009\u62E9\u5668\u6216\u7C7B\u540D\uFF1A\n *   --dsw-static-*  \u662F dsh \u7684\u8272\u677F\n *   --dsw-alias-*   \u662F dsh \u7684\u8BED\u4E49\u5C42\uFF0878 \u4E2A\uFF09\n * \u56E0\u6B64 dsh \u5347\u7EA7\u6362\u4E86\u7EC4\u4EF6\u5B9E\u73B0\uFF0C\u76AE\u80A4\u4F9D\u7136\u6709\u6548\u3002\n *\n * \u6240\u6709\u53EF\u8C03\u9879\u90FD\u4EE5 --skin-* \u53D8\u91CF\u66B4\u9732\uFF0C\u7531\u63D2\u4EF6\u5728\u8FD0\u884C\u65F6\u6309\u7528\u6237\u8BBE\u7F6E\u5199\u5230 :root \u4E0A\u3002\n */\n\n/* \u2500\u2500 \u53EF\u8C03\u53D8\u91CF\u7684\u9ED8\u8BA4\u503C\uFF08\u6697\u8272\uFF09 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n   \u63D2\u4EF6\u4F1A\u628A dsh \u7684\u660E\u6697\u72B6\u6001\u955C\u50CF\u5230 html[data-skin-mode] \u4E0A\uFF1B\u57FA\u8272\u4E00\u7FFB\u8F6C\uFF0C\n   \u4E0B\u9762\u6240\u6709 color-mix \u516C\u5F0F\u5728\u6D45\u8272\u4E0B\u540C\u6837\u6210\u7ACB\uFF0C\u4E0D\u9700\u8981\u5199\u4E24\u5957\u3002 */\n:root {\n  /* \u5E95\u8272\u4E0E\u5F3A\u8C03\u8272 */\n  --skin-bg: #171817;\n  --skin-text: #f3f2ed;\n  --skin-muted: #aaa9a2;\n  --skin-accent: #d3aa61;\n  --skin-accent-ink: #201a10;\n\n  /* \u80CC\u666F\u56FE\uFF1Anone \u8868\u793A\u7EAF\u8272\u5E95 */\n  --skin-image: none;\n  --skin-image-opacity: 0.5;\n  --skin-image-blur: 0px;\n  --skin-image-scale: 1;\n  --skin-position-x: 50%;\n  --skin-position-y: 50%;\n  /* \u4E3B\u56FE\u4E0B\u9762\u518D\u57AB\u4E00\u5C42\u653E\u5927\u6A21\u7CCA\u7684\u540C\u56FE\uFF0C\u8FB9\u7F18\u4E0D\u4F1A\u9732\u51FA\u786C\u8FB9 */\n  --skin-backdrop-opacity: 0.18;\n  --skin-backdrop-blur: 24px;\n\n  /*\n   * \u5BBF\u4E3B\u7A97\u53E3\u628A\u7CFB\u7EDF\u63A7\u4EF6\uFF08macOS \u4EA4\u901A\u706F\uFF09\u6D6E\u5728\u9875\u9762\u5DE6\u4E0A\u89D2\u65F6\uFF0C\u8FD9\u91CC\u586B\u63A7\u4EF6\u6761\u7684\u9AD8\u5EA6\uFF0C\n   * dsh \u7684\u4FA7\u680F\u636E\u6B64\u5411\u4E0B\u8BA9\u51FA\u4E00\u6BB5\uFF0Clogo \u5C31\u4E0D\u4F1A\u88AB\u6309\u94AE\u538B\u4F4F\u3002\u7EAF\u6D4F\u89C8\u5668\u4E0B\u4E3A 0\u3002\n   */\n  --skin-window-controls: 0px;\n\n  /* \u5BBF\u4E3B\uFF08\u684C\u9762\u58F3\uFF09\u5728\u5DE6\u4FA7\u5360\u4E86\u4E00\u6761\u56FE\u6807\u680F\u65F6\uFF0C\u628A\u753B\u5E03\u6309\u6574\u7A97\u5750\u6807\u5916\u6269\u8FD9\u4E48\u591A\uFF0C\n     \u58F3\u90A3\u6761\u680F\u5C31\u80FD\u753B\u51FA\u540C\u4E00\u5F20\u56FE\u7684\u5DE6\u4FA7\u5207\u7247\uFF0C\u4E24\u8FB9\u63A5\u6210\u4E00\u6574\u5F20\u3002\u7EAF\u6D4F\u89C8\u5668\u4E0B\u4E3A 0\u3002 */\n  --skin-inset-left: 0px;\n\n  /* \u8499\u7248\uFF1A\u76D6\u5728\u80CC\u666F\u56FE\u4E4B\u4E0A\u3001\u754C\u9762\u4E4B\u4E0B\uFF0C\u538B\u4F4E\u80CC\u666F\u56FE\u5BF9\u53EF\u8BFB\u6027\u7684\u5E72\u6270 */\n  --skin-wash: rgba(23, 24, 23, 0.58);\n\n  /* \u8868\u9762\u900F\u660E\u5EA6\uFF1A0 = \u5B8C\u5168\u4E0D\u900F\uFF08\u770B\u4E0D\u89C1\u80CC\u666F\u56FE\uFF09\uFF0C1 = \u6700\u900F\u3002\n     \u4E0A\u9650\u523B\u610F\u6536\u7A84\uFF08\u4E3B\u8868\u9762\u6700\u591A\u8BA9\u51FA 30%\uFF09\uFF0C\u518D\u900F\u6587\u5B57\u5C31\u538B\u4E0D\u4F4F\u80CC\u666F\u56FE\u4E86\u3002 */\n  --skin-transparency: 0.8;\n\n  /* \u5706\u89D2\u4E0E\u52A8\u6548 */\n  --skin-radius: 13px;\n  --skin-control-radius: 8px;\n  --skin-duration: 160ms;\n  --skin-easing: cubic-bezier(0.16, 1, 0.3, 1);\n}\n\nhtml[data-skin-mode="light"] {\n  --skin-bg: #f6f5f1;\n  --skin-text: #201f1c;\n  --skin-muted: #6f6d64;\n  --skin-accent: #a8763a;\n  --skin-accent-ink: #fffaf0;\n  --skin-wash: rgba(246, 245, 241, 0.6);\n}\n\n/* \u2500\u2500 \u753B\u5E03\u5C42 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n   \u56FA\u5B9A\u5728\u89C6\u53E3\u3001z-index -1\uFF1Bbody \u9700\u8981 isolation \u5EFA\u7ACB\u5C42\u53E0\u4E0A\u4E0B\u6587\uFF0C\n   \u5426\u5219 -1 \u4F1A\u88AB body \u81EA\u8EAB\u80CC\u666F\u76D6\u4F4F\u3002 */\nhtml.skin-studio,\nhtml.skin-studio body {\n  background-color: var(--skin-bg) !important;\n}\n\nhtml.skin-studio body {\n  position: relative;\n  isolation: isolate;\n}\n\n#skin-studio-art {\n  position: fixed;\n  inset: 0;\n  z-index: -1;\n  overflow: hidden;\n  pointer-events: none;\n  background-color: var(--skin-bg);\n}\n\n#skin-studio-art > .skin-backdrop,\n#skin-studio-art > .skin-canvas {\n  position: absolute;\n  pointer-events: none;\n  background-image: var(--skin-image);\n  background-position: var(--skin-position-x) var(--skin-position-y);\n  background-repeat: no-repeat;\n}\n\n/* \u57AB\u5E95\u7684\u653E\u5927\u6A21\u7CCA\u5C42\uFF1A\u5411\u5916\u6EA2\u51FA 5% \u5E76\u8F7B\u5FAE\u653E\u5927\uFF0C\u56DB\u5468\u4E0D\u4F1A\u51FA\u73B0\u786C\u8FB9 */\n#skin-studio-art > .skin-backdrop {\n  inset: -5%;\n  left: calc(-5% - var(--skin-inset-left));\n  background-size: cover;\n  opacity: var(--skin-backdrop-opacity);\n  filter: blur(var(--skin-backdrop-blur));\n  transform: scale(1.06);\n}\n\n#skin-studio-art > .skin-canvas {\n  inset: 0;\n  left: calc(-1 * var(--skin-inset-left));\n  z-index: 1;\n  background-size: cover;\n  opacity: var(--skin-image-opacity);\n  filter: blur(var(--skin-image-blur));\n  transform: scale(var(--skin-image-scale));\n  transition: opacity var(--skin-duration) linear;\n}\n\n/* \u8499\u7248\u76D6\u5728\u56FE\u4E4B\u4E0A\uFF0C\u754C\u9762\u4E4B\u4E0B */\n#skin-studio-art > .skin-wash {\n  position: absolute;\n  inset: 0;\n  z-index: 2;\n  pointer-events: none;\n  background: var(--skin-wash);\n}\n\n/* \u2500\u2500 \u628A dsh \u7684\u8272\u677F\u6362\u6210\u672C\u76AE\u80A4\u7684\u5F3A\u8C03\u8272 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n   \u53D1\u9001\u6309\u94AE\u7B49\u54C1\u724C\u5143\u7D20\u53D6\u81EA deepseek-400\uFF0C\u6574\u6761\u8272\u9636\u4E00\u8D77\u6362\uFF0C\u6DF1\u6D45\u5173\u7CFB\u4E0D\u4E71\u3002 */\nbody,\nbody[data-ds-dark-theme] {\n  --dsw-static-deepseek-50: color-mix(in srgb, var(--skin-accent) 18%, white);\n  --dsw-static-deepseek-100: color-mix(in srgb, var(--skin-accent) 28%, white);\n  --dsw-static-deepseek-200: color-mix(in srgb, var(--skin-accent) 42%, white);\n  --dsw-static-deepseek-300: color-mix(in srgb, var(--skin-accent) 62%, white);\n  --dsw-static-deepseek-400: var(--skin-accent);\n  --dsw-static-deepseek-450: color-mix(in srgb, var(--skin-accent) 94%, black);\n  --dsw-static-deepseek-500: color-mix(in srgb, var(--skin-accent) 84%, black);\n  --dsw-static-deepseek-600: color-mix(in srgb, var(--skin-accent) 70%, black);\n  --dsw-static-deepseek-700-delete: color-mix(in srgb, var(--skin-accent) 54%, black);\n  --dsw-static-deepseek-800: color-mix(in srgb, var(--skin-accent) 26%, var(--skin-bg));\n  --dsw-static-deepseek-900: color-mix(in srgb, var(--skin-accent) 16%, var(--skin-bg));\n}\n\n/* \u2500\u2500 \u8BED\u4E49\u5C42 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n   \u8868\u9762\u5168\u90E8\u5E26 alpha\uFF0C\u80CC\u666F\u56FE\u624D\u900F\u5F97\u4E0A\u6765\uFF1B--skin-transparency \u8D8A\u5927\u8D8A\u900F\u3002\n   \u9009\u62E9\u5668\u540C\u65F6\u5217\u51FA body \u4E0E body[data-ds-dark-theme]\uFF1Adsh \u81EA\u5DF1\u7684\u6697\u8272\u89C4\u5219\u7528\u7684\u662F\n   \u540E\u8005\uFF08\u7279\u5F02\u6027 0,1,1\uFF09\uFF0C\u53EA\u5199 body \u4F1A\u5728\u6697\u8272\u4E0B\u88AB\u5B83\u538B\u8FC7\u3002 */\nbody,\nbody[data-ds-dark-theme] {\n  --dsw-alias-bg-base: transparent;\n  --dsw-alias-bg-layer-1: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 26%), transparent);\n  --dsw-alias-bg-layer-2: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 20%), transparent);\n  --dsw-alias-bg-layer-3: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 12%), transparent);\n  --dsw-alias-bg-overlay: color-mix(in srgb, var(--skin-text) 14%, var(--skin-bg));\n  --dsw-alias-bg-skeleton: color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg));\n  --dsw-alias-bg-multi-select: color-mix(in srgb, var(--skin-accent) 16%, transparent);\n  --dsw-alias-bg-module-platform: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 22%), transparent);\n  --dsw-alias-bg-mask-1: color-mix(in srgb, var(--skin-bg) 72%, transparent);\n  --dsw-alias-bg-mask-2: color-mix(in srgb, var(--skin-bg) 58%, transparent);\n  --dsw-alias-bg-mask-3: color-mix(in srgb, var(--skin-bg) 40%, transparent);\n  --dsw-alias-bg-mask-drop: color-mix(in srgb, var(--skin-accent) 14%, transparent);\n\n  /* \u7EC4\u4EF6\u7EA7\u53D8\u91CF\uFF1Adsh \u7684\u4FA7\u680F\u3001\u8F93\u5165\u6846\u3001\u6C14\u6CE1\u7B49\u4E0D\u8D70 alias \u5C42\uFF0C\u5355\u72EC\u7ED9\u5B83\u4EEC\u540C\u4E00\u5957\u5904\u7406\u3002\n     \u627F\u8F7D\u6587\u5B57\u8D8A\u591A\u7684\u8868\u9762\u8D8A\u5B9E\uFF1A\u4FA7\u680F\u4E0E\u8F93\u5165\u6846\u53EA\u8BA9\u51FA\u4E00\u70B9\uFF0C\u80CC\u666F\u56FE\u624D\u4E0D\u4F1A\u76D6\u8FC7\u5185\u5BB9\u3002 */\n  --dsw-specific-sidebar-fill: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 3%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 42%), transparent);\n  --dsw-specific-input-major: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 8%), transparent);\n  --dsw-specific-login-input: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 10%), transparent);\n  --dsw-specific-selector: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 7%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 10%), transparent);\n  --dsw-specific-tip: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 7%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 12%), transparent);\n  --dsw-hovercard-bg: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 8%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 8%), transparent);\n  /* \u7528\u6237\u6D88\u606F\u6C14\u6CE1\u4E0E\u4FA7\u680F\u9009\u4E2D\u9879\u8D70\u5F3A\u8C03\u8272\uFF0C\u76AE\u80A4\u7684\u4E3B\u8272\u624D\u7ACB\u5F97\u4F4F */\n  --dsw-specific-bubble: color-mix(in srgb, var(--skin-accent) 14%, var(--skin-bg));\n  --dsw-specific-bubble-highlight: color-mix(in srgb, var(--skin-accent) 26%, var(--skin-bg));\n  --dsw-specific-sidebar-nav-item-active: color-mix(in srgb, var(--skin-accent) 16%, transparent);\n  --dsw-specific-sidebar-nav-item-active-accent: color-mix(in srgb, var(--skin-accent) 24%, transparent);\n  --dsw-specific-sidebar-nav-item-hover: color-mix(in srgb, var(--skin-text) 7%, transparent);\n\n  --dsw-alias-label-primary: var(--skin-text);\n  --dsw-alias-label-primary-bluish: var(--skin-text);\n  --dsw-alias-label-primary-dimmed: color-mix(in srgb, var(--skin-text) 62%, transparent);\n  --dsw-alias-label-primary-foreground: var(--skin-text);\n  --dsw-alias-label-primary-inverted: var(--skin-accent-ink);\n  --dsw-alias-label-secondary: color-mix(in srgb, var(--skin-text) 78%, var(--skin-bg));\n  --dsw-alias-label-tertiary: var(--skin-muted);\n  --dsw-alias-label-caption: color-mix(in srgb, var(--skin-muted) 82%, var(--skin-bg));\n  --dsw-alias-label-dimmed: color-mix(in srgb, var(--skin-muted) 64%, var(--skin-bg));\n\n  --dsw-alias-brand-primary: var(--skin-accent);\n  --dsw-alias-brand-primary-invert: var(--skin-accent-ink);\n  --dsw-alias-brand-text: var(--skin-accent);\n  --dsw-alias-brand-primary-new-colorprimary-new-color: var(--skin-accent);\n\n  --dsw-alias-border-l1: color-mix(in srgb, var(--skin-text) 7%, transparent);\n  --dsw-alias-border-l2: color-mix(in srgb, var(--skin-text) 12%, transparent);\n  --dsw-alias-border-l2-darkmode-thin: color-mix(in srgb, var(--skin-text) 10%, transparent);\n  --dsw-alias-border-l3: color-mix(in srgb, var(--skin-text) 18%, transparent);\n  --dsw-alias-border-l4: color-mix(in srgb, var(--skin-text) 26%, transparent);\n  --dsw-alias-border-inverted: color-mix(in srgb, var(--skin-accent-ink) 20%, transparent);\n  --dsw-alias-border-inverted2: color-mix(in srgb, var(--skin-accent-ink) 32%, transparent);\n\n  --dsw-alias-button-primary-fill: var(--skin-accent);\n  --dsw-alias-button-primary-hover: color-mix(in srgb, var(--skin-accent) 80%, white);\n  --dsw-alias-button-primary-dimmed: color-mix(in srgb, var(--skin-accent) 42%, transparent);\n  --dsw-alias-button-contrast-fill: var(--skin-text);\n  --dsw-alias-button-elevated-fill: color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg));\n  --dsw-alias-button-floating-fill: color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg));\n  --dsw-alias-button-floating-hover: color-mix(in srgb, var(--skin-text) 11%, var(--skin-bg));\n  --dsw-alias-button-ghost-active-fill: color-mix(in srgb, var(--skin-accent) 16%, transparent);\n  --dsw-alias-button-ghost-active-hover: color-mix(in srgb, var(--skin-accent) 22%, transparent);\n  --dsw-alias-button-ghost-active-border: color-mix(in srgb, var(--skin-accent) 45%, transparent);\n  --dsw-alias-button-info-fill: var(--skin-accent);\n  --dsw-alias-button-info-hover: color-mix(in srgb, var(--skin-accent) 84%, black);\n  --dsw-alias-button-tool-bar-fill: color-mix(in srgb, var(--skin-text) 6%, transparent);\n  --dsw-alias-button-tool-bar-fill-invisible: transparent;\n  --dsw-alias-button-tool-bar-hover: color-mix(in srgb, var(--skin-text) 10%, transparent);\n\n  --dsw-alias-interactive-bg-hover: color-mix(in srgb, var(--skin-text) 7%, transparent);\n  --dsw-alias-interactive-bg-hover-solid: color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg));\n  --dsw-alias-interactive-bg-hover-accent: color-mix(in srgb, var(--skin-accent) 18%, transparent);\n  --dsw-alias-interactive-bg-hover-danger: rgba(229, 115, 90, 0.16);\n  --dsw-alias-interactive-bg-active: color-mix(in srgb, var(--skin-accent) 16%, transparent);\n\n  --dsw-alias-markdown-inline-code: color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg));\n  --dsw-alias-markdown-code-block: color-mix(in srgb, var(--skin-bg) 88%, transparent);\n  --dsw-alias-markdown-code-block-banner: color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg));\n  --dsw-alias-markdown-code-segment-selected: color-mix(in srgb, var(--skin-accent) 18%, transparent);\n  --dsw-alias-markdown-code-segment-unselected: transparent;\n  --dsw-alias-markdown-citation: var(--skin-accent);\n  --dsw-alias-markdown-tag: color-mix(in srgb, var(--skin-accent) 16%, transparent);\n  --dsw-alias-markdown-placeholder: var(--skin-muted);\n\n  --dsw-alias-state-error-primary: #e5735a;\n  --dsw-alias-state-error-secondary: rgba(229, 115, 90, 0.16);\n  --dsw-alias-state-success-primary: #7fb87a;\n  --dsw-alias-state-success-secondary: rgba(127, 184, 122, 0.16);\n  --dsw-alias-state-success-tertiary: rgba(127, 184, 122, 0.1);\n  --dsw-alias-state-warn-primary: #d9a441;\n  --dsw-alias-state-warn-secondary: rgba(217, 164, 65, 0.16);\n  --dsw-alias-state-warn-tertiary: rgba(217, 164, 65, 0.1);\n  --dsw-alias-state-warn-label: #d9a441;\n  --dsw-alias-state-business-primary: var(--skin-accent);\n  --dsw-alias-state-business-tertiary: color-mix(in srgb, var(--skin-accent) 14%, transparent);\n\n  --dsw-alias-tooltip-bg: color-mix(in srgb, var(--skin-text) 14%, var(--skin-bg));\n  --dsw-alias-toast-bg: color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg));\n\n  --dsw-alias-scrollbar-bg-l1: color-mix(in srgb, var(--skin-accent) 22%, transparent);\n  --dsw-alias-scrollbar-bg-l2: color-mix(in srgb, var(--skin-accent) 22%, transparent);\n  --dsw-alias-scrollbar-hover-l1: color-mix(in srgb, var(--skin-accent) 40%, transparent);\n  --dsw-alias-scrollbar-hover-l2: color-mix(in srgb, var(--skin-accent) 40%, transparent);\n  --dsh-scrollbar-thumb: color-mix(in srgb, var(--skin-accent) 24%, transparent);\n  --dsh-scrollbar-thumb-hover: color-mix(in srgb, var(--skin-accent) 42%, transparent);\n}\n\n/*\n * \u7ED9\u7CFB\u7EDF\u7A97\u53E3\u63A7\u4EF6\u8BA9\u4F4D\u3002\n *\n * \u9009\u62E9\u5668\u7528 dsh \u4FA7\u680F\u90A3\u4E2A CSS Modules \u7C7B\uFF08\u54C8\u5E0C\u524D\u7F00\u4F1A\u53D8\uFF0C`sidebarCol` \u540E\u7F00\u7A33\u5B9A\uFF09\u3002\n * \u8FD9\u662F\u672C\u6587\u4EF6\u552F\u4E00\u4E00\u5904\u7ED3\u6784\u9009\u62E9\u5668\uFF1A\u5339\u914D\u4E0D\u4E0A\u65F6\u53EA\u662F\u4E0D\u8BA9\u4F4D\uFF0C\u754C\u9762\u4E0D\u4F1A\u574F\u3002\n */\n[class*="sidebarCol"] {\n  padding-top: var(--skin-window-controls);\n}\n\n/* \u2500\u2500 \u89C2\u611F\u7EC6\u8282 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\nhtml.skin-studio * {\n  scrollbar-width: thin;\n  scrollbar-color: var(--dsh-scrollbar-thumb, transparent) transparent;\n}\n\nhtml.skin-studio ::selection {\n  background: color-mix(in srgb, var(--skin-accent) 24%, transparent);\n}\n';
+var skin_default = `/*
+ * Skin Studio \u2014\u2014 DeepSeek Harness Web UI \u76AE\u80A4\u3002
+ *
+ * \u7ED3\u6784\u53C2\u8003 codex-skin-studio\uFF1A\u9875\u9762\u6700\u5E95\u5C42\u653E\u4E00\u4E2A\u56FA\u5B9A\u7684\u300C\u753B\u5E03\u5C42\u300D\u627F\u8F7D\u80CC\u666F\u56FE\uFF0C
+ * \u754C\u9762\u4E0A\u6240\u6709\u8868\u9762\u6539\u6210\u534A\u900F\u660E\uFF0C\u80CC\u666F\u56FE\u4FBF\u4ECE\u4E0B\u9762\u900F\u4E0A\u6765\uFF1B\u900F\u5149\u5F3A\u5EA6\u7531 wash \u8499\u7248
+ * \u4E0E\u5404\u8868\u9762\u7684 alpha \u63A7\u5236\u3002
+ *
+ * \u6362\u80A4\u53EA\u6539\u53D8\u91CF\uFF0C\u4E0D\u78B0 dsh \u7684\u4EFB\u4F55\u7ED3\u6784\u9009\u62E9\u5668\u6216\u7C7B\u540D\uFF1A
+ *   --dsw-static-*  \u662F dsh \u7684\u8272\u677F
+ *   --dsw-alias-*   \u662F dsh \u7684\u8BED\u4E49\u5C42\uFF0878 \u4E2A\uFF09
+ * \u56E0\u6B64 dsh \u5347\u7EA7\u6362\u4E86\u7EC4\u4EF6\u5B9E\u73B0\uFF0C\u76AE\u80A4\u4F9D\u7136\u6709\u6548\u3002
+ *
+ * \u6240\u6709\u53EF\u8C03\u9879\u90FD\u4EE5 --skin-* \u53D8\u91CF\u66B4\u9732\uFF0C\u7531\u63D2\u4EF6\u5728\u8FD0\u884C\u65F6\u6309\u7528\u6237\u8BBE\u7F6E\u5199\u5230 :root \u4E0A\u3002
+ */
+
+/* \u2500\u2500 \u53EF\u8C03\u53D8\u91CF\u7684\u9ED8\u8BA4\u503C\uFF08\u6697\u8272\uFF09 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   \u63D2\u4EF6\u4F1A\u628A dsh \u7684\u660E\u6697\u72B6\u6001\u955C\u50CF\u5230 html[data-skin-mode] \u4E0A\uFF1B\u57FA\u8272\u4E00\u7FFB\u8F6C\uFF0C
+   \u4E0B\u9762\u6240\u6709 color-mix \u516C\u5F0F\u5728\u6D45\u8272\u4E0B\u540C\u6837\u6210\u7ACB\uFF0C\u4E0D\u9700\u8981\u5199\u4E24\u5957\u3002 */
+:root {
+  /* \u5E95\u8272\u4E0E\u5F3A\u8C03\u8272 */
+  --skin-bg: #171817;
+  --skin-text: #f3f2ed;
+  --skin-muted: #aaa9a2;
+  --skin-accent: #d3aa61;
+  --skin-accent-ink: #201a10;
+
+  /* \u80CC\u666F\u56FE\uFF1Anone \u8868\u793A\u7EAF\u8272\u5E95 */
+  --skin-image: none;
+  --skin-image-opacity: 0.5;
+  --skin-image-blur: 0px;
+  --skin-image-scale: 1;
+  --skin-position-x: 50%;
+  --skin-position-y: 50%;
+  /* \u4E3B\u56FE\u4E0B\u9762\u518D\u57AB\u4E00\u5C42\u653E\u5927\u6A21\u7CCA\u7684\u540C\u56FE\uFF0C\u8FB9\u7F18\u4E0D\u4F1A\u9732\u51FA\u786C\u8FB9 */
+  --skin-backdrop-opacity: 0.18;
+  --skin-backdrop-blur: 24px;
+
+  /*
+   * \u5BBF\u4E3B\u7A97\u53E3\u628A\u7CFB\u7EDF\u63A7\u4EF6\uFF08macOS \u4EA4\u901A\u706F\uFF09\u6D6E\u5728\u9875\u9762\u5DE6\u4E0A\u89D2\u65F6\uFF0C\u8FD9\u91CC\u586B\u63A7\u4EF6\u6761\u7684\u9AD8\u5EA6\uFF0C
+   * dsh \u7684\u4FA7\u680F\u636E\u6B64\u5411\u4E0B\u8BA9\u51FA\u4E00\u6BB5\uFF0Clogo \u5C31\u4E0D\u4F1A\u88AB\u6309\u94AE\u538B\u4F4F\u3002\u7EAF\u6D4F\u89C8\u5668\u4E0B\u4E3A 0\u3002
+   */
+  --skin-window-controls: 0px;
+
+  /* \u5BBF\u4E3B\uFF08\u684C\u9762\u58F3\uFF09\u5728\u5DE6\u4FA7\u5360\u4E86\u4E00\u6761\u56FE\u6807\u680F\u65F6\uFF0C\u628A\u753B\u5E03\u6309\u6574\u7A97\u5750\u6807\u5916\u6269\u8FD9\u4E48\u591A\uFF0C
+     \u58F3\u90A3\u6761\u680F\u5C31\u80FD\u753B\u51FA\u540C\u4E00\u5F20\u56FE\u7684\u5DE6\u4FA7\u5207\u7247\uFF0C\u4E24\u8FB9\u63A5\u6210\u4E00\u6574\u5F20\u3002\u7EAF\u6D4F\u89C8\u5668\u4E0B\u4E3A 0\u3002 */
+  --skin-inset-left: 0px;
+
+  /* \u8499\u7248\uFF1A\u76D6\u5728\u80CC\u666F\u56FE\u4E4B\u4E0A\u3001\u754C\u9762\u4E4B\u4E0B\uFF0C\u538B\u4F4E\u80CC\u666F\u56FE\u5BF9\u53EF\u8BFB\u6027\u7684\u5E72\u6270 */
+  --skin-wash: rgba(23, 24, 23, 0.58);
+
+  /* \u8868\u9762\u900F\u660E\u5EA6\uFF1A0 = \u5B8C\u5168\u4E0D\u900F\uFF08\u770B\u4E0D\u89C1\u80CC\u666F\u56FE\uFF09\uFF0C1 = \u6700\u900F\u3002
+     \u4E0A\u9650\u523B\u610F\u6536\u7A84\uFF08\u4E3B\u8868\u9762\u6700\u591A\u8BA9\u51FA 30%\uFF09\uFF0C\u518D\u900F\u6587\u5B57\u5C31\u538B\u4E0D\u4F4F\u80CC\u666F\u56FE\u4E86\u3002 */
+  --skin-transparency: 0.8;
+
+  /* \u5706\u89D2\u4E0E\u52A8\u6548 */
+  --skin-radius: 13px;
+  --skin-control-radius: 8px;
+  --skin-duration: 160ms;
+  --skin-easing: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-skin-mode="light"] {
+  --skin-bg: #f6f5f1;
+  --skin-text: #201f1c;
+  --skin-muted: #6f6d64;
+  --skin-accent: #a8763a;
+  --skin-accent-ink: #fffaf0;
+  --skin-wash: rgba(246, 245, 241, 0.6);
+}
+
+/* \u2500\u2500 \u753B\u5E03\u5C42 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   \u56FA\u5B9A\u5728\u89C6\u53E3\u3001z-index -1\uFF1Bbody \u9700\u8981 isolation \u5EFA\u7ACB\u5C42\u53E0\u4E0A\u4E0B\u6587\uFF0C
+   \u5426\u5219 -1 \u4F1A\u88AB body \u81EA\u8EAB\u80CC\u666F\u76D6\u4F4F\u3002 */
+html.skin-studio,
+html.skin-studio body {
+  background-color: var(--skin-bg) !important;
+}
+
+html.skin-studio body {
+  position: relative;
+  isolation: isolate;
+}
+
+#skin-studio-art {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background-color: var(--skin-bg);
+}
+
+#skin-studio-art > .skin-backdrop,
+#skin-studio-art > .skin-canvas {
+  position: absolute;
+  pointer-events: none;
+  background-image: var(--skin-image);
+  background-position: var(--skin-position-x) var(--skin-position-y);
+  background-repeat: no-repeat;
+}
+
+/* \u57AB\u5E95\u7684\u653E\u5927\u6A21\u7CCA\u5C42\uFF1A\u5411\u5916\u6EA2\u51FA 5% \u5E76\u8F7B\u5FAE\u653E\u5927\uFF0C\u56DB\u5468\u4E0D\u4F1A\u51FA\u73B0\u786C\u8FB9 */
+#skin-studio-art > .skin-backdrop {
+  inset: -5%;
+  left: calc(-5% - var(--skin-inset-left));
+  background-size: cover;
+  opacity: var(--skin-backdrop-opacity);
+  filter: blur(var(--skin-backdrop-blur));
+  transform: scale(1.06);
+}
+
+#skin-studio-art > .skin-canvas {
+  inset: 0;
+  left: calc(-1 * var(--skin-inset-left));
+  z-index: 1;
+  background-size: cover;
+  opacity: var(--skin-image-opacity);
+  filter: blur(var(--skin-image-blur));
+  transform: scale(var(--skin-image-scale));
+  transition: opacity var(--skin-duration) linear;
+}
+
+/*
+ * \u89C6\u9891\u5C42\uFF1A\u4F4D\u7F6E\u4E0E .skin-canvas \u5B8C\u5168\u4E00\u81F4\uFF0C\u6D53\u5EA6\u3001\u6A21\u7CCA\u3001\u7F29\u653E\u5171\u7528\u540C\u4E00\u7EC4\u53D8\u91CF\uFF0C
+ * \u6240\u4EE5\u56FE\u6362\u6210\u89C6\u9891\u540E\u89C2\u611F\u662F\u8FDE\u7EED\u7684\u3002
+ *
+ * \u4E0D\u8BBE width/height\uFF1A\u56DB\u8FB9\u90FD\u5B9A\u4E86\u4F4D\uFF0C\u76D2\u5B50\u5C3A\u5BF8\u7531\u5B9A\u4F4D\u51B3\u5B9A\uFF0Cobject-fit: cover
+ * \u8D1F\u8D23\u628A\u753B\u9762\u88C1\u5230\u94FA\u6EE1\u2014\u2014\u5199\u6B7B width:100% \u53CD\u800C\u4F1A\u7834\u574F\u8FD9\u4E2A\u5173\u7CFB\u3002
+ * \u89C6\u9891\u5929\u7136\u94FA\u6EE1\uFF0C\u4E5F\u5C31\u4E0D\u9700\u8981 .skin-backdrop \u90A3\u5C42\u9632\u786C\u8FB9\u7684\u57AB\u5E95\u6A21\u7CCA\u3002
+ */
+#skin-studio-art > .skin-video {
+  position: absolute;
+  inset: 0;
+  left: calc(-1 * var(--skin-inset-left));
+  z-index: 1;
+  display: none;
+  object-fit: cover;
+  opacity: var(--skin-image-opacity);
+  filter: blur(var(--skin-image-blur));
+  transform: scale(var(--skin-image-scale));
+  transition: opacity var(--skin-duration) linear;
+}
+
+html[data-skin-bg='video'] #skin-studio-art > .skin-video { display: block; }
+html[data-skin-bg='video'] #skin-studio-art > .skin-backdrop,
+html[data-skin-bg='video'] #skin-studio-art > .skin-canvas { display: none; }
+
+/* \u8499\u7248\u76D6\u5728\u56FE\u4E4B\u4E0A\uFF0C\u754C\u9762\u4E4B\u4E0B */
+#skin-studio-art > .skin-wash {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: var(--skin-wash);
+}
+
+/* \u2500\u2500 \u628A dsh \u7684\u8272\u677F\u6362\u6210\u672C\u76AE\u80A4\u7684\u5F3A\u8C03\u8272 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   \u53D1\u9001\u6309\u94AE\u7B49\u54C1\u724C\u5143\u7D20\u53D6\u81EA deepseek-400\uFF0C\u6574\u6761\u8272\u9636\u4E00\u8D77\u6362\uFF0C\u6DF1\u6D45\u5173\u7CFB\u4E0D\u4E71\u3002 */
+body,
+body[data-ds-dark-theme] {
+  --dsw-static-deepseek-50: color-mix(in srgb, var(--skin-accent) 18%, white);
+  --dsw-static-deepseek-100: color-mix(in srgb, var(--skin-accent) 28%, white);
+  --dsw-static-deepseek-200: color-mix(in srgb, var(--skin-accent) 42%, white);
+  --dsw-static-deepseek-300: color-mix(in srgb, var(--skin-accent) 62%, white);
+  --dsw-static-deepseek-400: var(--skin-accent);
+  --dsw-static-deepseek-450: color-mix(in srgb, var(--skin-accent) 94%, black);
+  --dsw-static-deepseek-500: color-mix(in srgb, var(--skin-accent) 84%, black);
+  --dsw-static-deepseek-600: color-mix(in srgb, var(--skin-accent) 70%, black);
+  --dsw-static-deepseek-700-delete: color-mix(in srgb, var(--skin-accent) 54%, black);
+  --dsw-static-deepseek-800: color-mix(in srgb, var(--skin-accent) 26%, var(--skin-bg));
+  --dsw-static-deepseek-900: color-mix(in srgb, var(--skin-accent) 16%, var(--skin-bg));
+}
+
+/* \u2500\u2500 \u8BED\u4E49\u5C42 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   \u8868\u9762\u5168\u90E8\u5E26 alpha\uFF0C\u80CC\u666F\u56FE\u624D\u900F\u5F97\u4E0A\u6765\uFF1B--skin-transparency \u8D8A\u5927\u8D8A\u900F\u3002
+   \u9009\u62E9\u5668\u540C\u65F6\u5217\u51FA body \u4E0E body[data-ds-dark-theme]\uFF1Adsh \u81EA\u5DF1\u7684\u6697\u8272\u89C4\u5219\u7528\u7684\u662F
+   \u540E\u8005\uFF08\u7279\u5F02\u6027 0,1,1\uFF09\uFF0C\u53EA\u5199 body \u4F1A\u5728\u6697\u8272\u4E0B\u88AB\u5B83\u538B\u8FC7\u3002 */
+body,
+body[data-ds-dark-theme] {
+  --dsw-alias-bg-base: transparent;
+  --dsw-alias-bg-layer-1: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 26%), transparent);
+  --dsw-alias-bg-layer-2: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 20%), transparent);
+  --dsw-alias-bg-layer-3: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 12%), transparent);
+  --dsw-alias-bg-overlay: color-mix(in srgb, var(--skin-text) 14%, var(--skin-bg));
+  --dsw-alias-bg-skeleton: color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg));
+  --dsw-alias-bg-multi-select: color-mix(in srgb, var(--skin-accent) 16%, transparent);
+  --dsw-alias-bg-module-platform: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 22%), transparent);
+  --dsw-alias-bg-mask-1: color-mix(in srgb, var(--skin-bg) 72%, transparent);
+  --dsw-alias-bg-mask-2: color-mix(in srgb, var(--skin-bg) 58%, transparent);
+  --dsw-alias-bg-mask-3: color-mix(in srgb, var(--skin-bg) 40%, transparent);
+  --dsw-alias-bg-mask-drop: color-mix(in srgb, var(--skin-accent) 14%, transparent);
+
+  /* \u7EC4\u4EF6\u7EA7\u53D8\u91CF\uFF1Adsh \u7684\u4FA7\u680F\u3001\u8F93\u5165\u6846\u3001\u6C14\u6CE1\u7B49\u4E0D\u8D70 alias \u5C42\uFF0C\u5355\u72EC\u7ED9\u5B83\u4EEC\u540C\u4E00\u5957\u5904\u7406\u3002
+     \u627F\u8F7D\u6587\u5B57\u8D8A\u591A\u7684\u8868\u9762\u8D8A\u5B9E\uFF1A\u4FA7\u680F\u4E0E\u8F93\u5165\u6846\u53EA\u8BA9\u51FA\u4E00\u70B9\uFF0C\u80CC\u666F\u56FE\u624D\u4E0D\u4F1A\u76D6\u8FC7\u5185\u5BB9\u3002 */
+  --dsw-specific-sidebar-fill: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 3%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 42%), transparent);
+  --dsw-specific-input-major: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 8%), transparent);
+  --dsw-specific-login-input: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 10%), transparent);
+  --dsw-specific-selector: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 7%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 10%), transparent);
+  --dsw-specific-tip: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 7%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 12%), transparent);
+  --dsw-hovercard-bg: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 8%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 8%), transparent);
+  /* \u7528\u6237\u6D88\u606F\u6C14\u6CE1\u4E0E\u4FA7\u680F\u9009\u4E2D\u9879\u8D70\u5F3A\u8C03\u8272\uFF0C\u76AE\u80A4\u7684\u4E3B\u8272\u624D\u7ACB\u5F97\u4F4F */
+  --dsw-specific-bubble: color-mix(in srgb, var(--skin-accent) 14%, var(--skin-bg));
+  --dsw-specific-bubble-highlight: color-mix(in srgb, var(--skin-accent) 26%, var(--skin-bg));
+  --dsw-specific-sidebar-nav-item-active: color-mix(in srgb, var(--skin-accent) 16%, transparent);
+  --dsw-specific-sidebar-nav-item-active-accent: color-mix(in srgb, var(--skin-accent) 24%, transparent);
+  --dsw-specific-sidebar-nav-item-hover: color-mix(in srgb, var(--skin-text) 7%, transparent);
+
+  --dsw-alias-label-primary: var(--skin-text);
+  --dsw-alias-label-primary-bluish: var(--skin-text);
+  --dsw-alias-label-primary-dimmed: color-mix(in srgb, var(--skin-text) 62%, transparent);
+  --dsw-alias-label-primary-foreground: var(--skin-text);
+  --dsw-alias-label-primary-inverted: var(--skin-accent-ink);
+  --dsw-alias-label-secondary: color-mix(in srgb, var(--skin-text) 78%, var(--skin-bg));
+  --dsw-alias-label-tertiary: var(--skin-muted);
+  --dsw-alias-label-caption: color-mix(in srgb, var(--skin-muted) 82%, var(--skin-bg));
+  --dsw-alias-label-dimmed: color-mix(in srgb, var(--skin-muted) 64%, var(--skin-bg));
+
+  --dsw-alias-brand-primary: var(--skin-accent);
+  --dsw-alias-brand-primary-invert: var(--skin-accent-ink);
+  --dsw-alias-brand-text: var(--skin-accent);
+  --dsw-alias-brand-primary-new-colorprimary-new-color: var(--skin-accent);
+
+  --dsw-alias-border-l1: color-mix(in srgb, var(--skin-text) 7%, transparent);
+  --dsw-alias-border-l2: color-mix(in srgb, var(--skin-text) 12%, transparent);
+  --dsw-alias-border-l2-darkmode-thin: color-mix(in srgb, var(--skin-text) 10%, transparent);
+  --dsw-alias-border-l3: color-mix(in srgb, var(--skin-text) 18%, transparent);
+  --dsw-alias-border-l4: color-mix(in srgb, var(--skin-text) 26%, transparent);
+  --dsw-alias-border-inverted: color-mix(in srgb, var(--skin-accent-ink) 20%, transparent);
+  --dsw-alias-border-inverted2: color-mix(in srgb, var(--skin-accent-ink) 32%, transparent);
+
+  --dsw-alias-button-primary-fill: var(--skin-accent);
+  --dsw-alias-button-primary-hover: color-mix(in srgb, var(--skin-accent) 80%, white);
+  --dsw-alias-button-primary-dimmed: color-mix(in srgb, var(--skin-accent) 42%, transparent);
+  --dsw-alias-button-contrast-fill: var(--skin-text);
+  --dsw-alias-button-elevated-fill: color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg));
+  --dsw-alias-button-floating-fill: color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg));
+  --dsw-alias-button-floating-hover: color-mix(in srgb, var(--skin-text) 11%, var(--skin-bg));
+  --dsw-alias-button-ghost-active-fill: color-mix(in srgb, var(--skin-accent) 16%, transparent);
+  --dsw-alias-button-ghost-active-hover: color-mix(in srgb, var(--skin-accent) 22%, transparent);
+  --dsw-alias-button-ghost-active-border: color-mix(in srgb, var(--skin-accent) 45%, transparent);
+  --dsw-alias-button-info-fill: var(--skin-accent);
+  --dsw-alias-button-info-hover: color-mix(in srgb, var(--skin-accent) 84%, black);
+  --dsw-alias-button-tool-bar-fill: color-mix(in srgb, var(--skin-text) 6%, transparent);
+  --dsw-alias-button-tool-bar-fill-invisible: transparent;
+  --dsw-alias-button-tool-bar-hover: color-mix(in srgb, var(--skin-text) 10%, transparent);
+
+  --dsw-alias-interactive-bg-hover: color-mix(in srgb, var(--skin-text) 7%, transparent);
+  --dsw-alias-interactive-bg-hover-solid: color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg));
+  --dsw-alias-interactive-bg-hover-accent: color-mix(in srgb, var(--skin-accent) 18%, transparent);
+  --dsw-alias-interactive-bg-hover-danger: rgba(229, 115, 90, 0.16);
+  --dsw-alias-interactive-bg-active: color-mix(in srgb, var(--skin-accent) 16%, transparent);
+
+  --dsw-alias-markdown-inline-code: color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg));
+  --dsw-alias-markdown-code-block: color-mix(in srgb, var(--skin-bg) 88%, transparent);
+  --dsw-alias-markdown-code-block-banner: color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg));
+  --dsw-alias-markdown-code-segment-selected: color-mix(in srgb, var(--skin-accent) 18%, transparent);
+  --dsw-alias-markdown-code-segment-unselected: transparent;
+  --dsw-alias-markdown-citation: var(--skin-accent);
+  --dsw-alias-markdown-tag: color-mix(in srgb, var(--skin-accent) 16%, transparent);
+  --dsw-alias-markdown-placeholder: var(--skin-muted);
+
+  --dsw-alias-state-error-primary: #e5735a;
+  --dsw-alias-state-error-secondary: rgba(229, 115, 90, 0.16);
+  --dsw-alias-state-success-primary: #7fb87a;
+  --dsw-alias-state-success-secondary: rgba(127, 184, 122, 0.16);
+  --dsw-alias-state-success-tertiary: rgba(127, 184, 122, 0.1);
+  --dsw-alias-state-warn-primary: #d9a441;
+  --dsw-alias-state-warn-secondary: rgba(217, 164, 65, 0.16);
+  --dsw-alias-state-warn-tertiary: rgba(217, 164, 65, 0.1);
+  --dsw-alias-state-warn-label: #d9a441;
+  --dsw-alias-state-business-primary: var(--skin-accent);
+  --dsw-alias-state-business-tertiary: color-mix(in srgb, var(--skin-accent) 14%, transparent);
+
+  --dsw-alias-tooltip-bg: color-mix(in srgb, var(--skin-text) 14%, var(--skin-bg));
+  --dsw-alias-toast-bg: color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg));
+
+  --dsw-alias-scrollbar-bg-l1: color-mix(in srgb, var(--skin-accent) 22%, transparent);
+  --dsw-alias-scrollbar-bg-l2: color-mix(in srgb, var(--skin-accent) 22%, transparent);
+  --dsw-alias-scrollbar-hover-l1: color-mix(in srgb, var(--skin-accent) 40%, transparent);
+  --dsw-alias-scrollbar-hover-l2: color-mix(in srgb, var(--skin-accent) 40%, transparent);
+  --dsh-scrollbar-thumb: color-mix(in srgb, var(--skin-accent) 24%, transparent);
+  --dsh-scrollbar-thumb-hover: color-mix(in srgb, var(--skin-accent) 42%, transparent);
+}
+
+/*
+ * \u7ED9\u7CFB\u7EDF\u7A97\u53E3\u63A7\u4EF6\u8BA9\u4F4D\u3002
+ *
+ * \u9009\u62E9\u5668\u7528 dsh \u4FA7\u680F\u90A3\u4E2A CSS Modules \u7C7B\uFF08\u54C8\u5E0C\u524D\u7F00\u4F1A\u53D8\uFF0C\`sidebarCol\` \u540E\u7F00\u7A33\u5B9A\uFF09\u3002
+ * \u8FD9\u662F\u672C\u6587\u4EF6\u552F\u4E00\u4E00\u5904\u7ED3\u6784\u9009\u62E9\u5668\uFF1A\u5339\u914D\u4E0D\u4E0A\u65F6\u53EA\u662F\u4E0D\u8BA9\u4F4D\uFF0C\u754C\u9762\u4E0D\u4F1A\u574F\u3002
+ */
+[class*="sidebarCol"] {
+  padding-top: var(--skin-window-controls);
+}
+
+/* \u2500\u2500 \u89C2\u611F\u7EC6\u8282 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+html.skin-studio * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--dsh-scrollbar-thumb, transparent) transparent;
+}
+
+html.skin-studio ::selection {
+  background: color-mix(in srgb, var(--skin-accent) 24%, transparent);
+}
+`;
 
 // src/client/index.ts
 var STORAGE_KEY = "dsh-skin-studio.config";

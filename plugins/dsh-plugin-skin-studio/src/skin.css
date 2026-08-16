@@ -120,6 +120,31 @@ html.skin-studio body {
   transition: opacity var(--skin-duration) linear;
 }
 
+/*
+ * 视频层：位置与 .skin-canvas 完全一致，浓度、模糊、缩放共用同一组变量，
+ * 所以图换成视频后观感是连续的。
+ *
+ * 不设 width/height：四边都定了位，盒子尺寸由定位决定，object-fit: cover
+ * 负责把画面裁到铺满——写死 width:100% 反而会破坏这个关系。
+ * 视频天然铺满，也就不需要 .skin-backdrop 那层防硬边的垫底模糊。
+ */
+#skin-studio-art > .skin-video {
+  position: absolute;
+  inset: 0;
+  left: calc(-1 * var(--skin-inset-left));
+  z-index: 1;
+  display: none;
+  object-fit: cover;
+  opacity: var(--skin-image-opacity);
+  filter: blur(var(--skin-image-blur));
+  transform: scale(var(--skin-image-scale));
+  transition: opacity var(--skin-duration) linear;
+}
+
+html[data-skin-bg='video'] #skin-studio-art > .skin-video { display: block; }
+html[data-skin-bg='video'] #skin-studio-art > .skin-backdrop,
+html[data-skin-bg='video'] #skin-studio-art > .skin-canvas { display: none; }
+
 /* 蒙版盖在图之上，界面之下 */
 #skin-studio-art > .skin-wash {
   position: absolute;

@@ -7,6 +7,15 @@
 
 import { DEFAULT_CONFIG, PRESETS, type SkinConfig } from './config'
 import { imageToDataUri } from './runtime'
+import { getVideo, putVideo, pruneVideos } from './video-store'
+
+/**
+ * 视频体积上限。
+ *
+ * IndexedDB 存得下更大的，但背景视频再大也只是铺在界面后面，超过这个量级
+ * 换来的是解码开销和磁盘占用，不是观感。挡在这里比事后让用户纳闷卡顿好。
+ */
+const MAX_VIDEO_BYTES = 200 * 1024 * 1024
 
 export interface PanelOptions {
   /** 当前配置。 */
@@ -38,8 +47,15 @@ const CSS = `
   border: 1px solid var(--dsw-alias-border-l2, #8883); border-radius: 999px; font-size: 12px; background: transparent; color: inherit; }
 .ss-preset:hover { border-color: var(--skin-accent, #d3aa61); }
 .ss-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
-.ss-thumb { width: 100%; height: 84px; border-radius: 9px; background-size: cover; background-position: center;
+.ss-thumb { position: relative; overflow: hidden; width: 100%; height: 84px; border-radius: 9px;
+  background-size: cover; background-position: center;
   border: 1px solid var(--dsw-alias-border-l2, #8883); margin-bottom: 10px; }
+.ss-thumb-video { display: none; width: 100%; height: 100%; object-fit: cover; }
+.ss-thumb.has-video .ss-thumb-video { display: block; }
+.ss-thumb-name { display: none; position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 8px;
+  font-size: 11px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,0.55));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ss-thumb.has-video .ss-thumb-name { display: block; }
 .ss-actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
 .ss-hint { color: var(--dsw-alias-label-caption, inherit); font-size: 11.5px; margin-left: auto; }
 .ss-switch { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
@@ -109,20 +125,92 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
   // 背景图
   root.appendChild(el('h3', {}, '背景'))
   const thumb = el('div', { class: 'ss-thumb' })
+  // 缩略图里的视频跟着背景一起动，用户不必把对话框挪开才能确认选对了没有
+  const thumbVideo = el('video', {}) as HTMLVideoElement
+  thumbVideo.className = 'ss-thumb-video'
+  thumbVideo.muted = true
+  thumbVideo.defaultMuted = true
+  thumbVideo.loop = true
+  thumbVideo.autoplay = true
+  thumbVideo.playsInline = true
+  const thumbName = el('div', { class: 'ss-thumb-name' })
+  thumb.append(thumbVideo, thumbName)
   root.appendChild(thumb)
 
-  const file = el('input', { type: 'file', accept: 'image/*', hidden: 'hidden' }) as HTMLInputElement
-  const pick = el('button', { class: 'ss-btn', type: 'button' }, '选择图片…')
+  /** 缩略图当前装的视频 id 与它的 blob URL，换片时要回收。 */
+  let thumbVideoId = ''
+  let thumbUrl: string | undefined
+
+  const syncThumb = (): void => {
+    const hasVideo = config.videoId !== ''
+    thumb.classList.toggle('has-video', hasVideo)
+    thumb.style.backgroundImage = hasVideo || config.image === '' ? 'none' : `url("${config.image}")`
+    thumbName.textContent = config.videoName === '' ? '背景视频' : config.videoName
+
+    if (!hasVideo) {
+      thumbVideoId = ''
+      thumbVideo.removeAttribute('src')
+      thumbVideo.load()
+      if (thumbUrl !== undefined) { URL.revokeObjectURL(thumbUrl); thumbUrl = undefined }
+      return
+    }
+    if (thumbVideoId === config.videoId) return
+    thumbVideoId = config.videoId
+    void getVideo(config.videoId).then((blob) => {
+      if (blob === undefined || thumbVideoId !== config.videoId) return
+      if (thumbUrl !== undefined) URL.revokeObjectURL(thumbUrl)
+      thumbUrl = URL.createObjectURL(blob)
+      thumbVideo.src = thumbUrl
+      void thumbVideo.play().catch(() => { /* 放不了就停在首帧 */ })
+    }).catch(() => {
+      status.textContent = '预览加载失败'
+    })
+  }
+
+  const file = el('input', {
+    type: 'file', accept: 'image/*,video/mp4,video/webm', hidden: 'hidden',
+  }) as HTMLInputElement
+  const pick = el('button', { class: 'ss-btn', type: 'button' }, '选择图片或视频…')
   const clear = el('button', { class: 'ss-btn', type: 'button' }, '清除')
   const status = el('span', { class: 'ss-hint' }, '')
   pick.addEventListener('click', () => { file.click() })
+
+  const megabytes = (bytes: number): string => `${(bytes / 1024 / 1024).toFixed(1)} MB`
+
+  /** 收下一段视频：存进 IndexedDB，配置里只记 id 与文件名。 */
+  const takeVideo = (chosen: File): void => {
+    if (chosen.size > MAX_VIDEO_BYTES) {
+      status.textContent = `视频 ${megabytes(chosen.size)}，超过上限 ${megabytes(MAX_VIDEO_BYTES)}`
+      return
+    }
+    status.textContent = '保存中…'
+    // id 每次都换，运行时据此判断要不要重新加载，也顺带绕开缓存
+    const id = `bg-${String(Date.now())}`
+    void putVideo(id, chosen).then(() => {
+      // 视频与图片是同一个背景位，二选一，留着另一个只会让人猜哪个生效
+      config = { ...config, videoId: id, videoName: chosen.name, image: '' }
+      syncInputs()
+      preview()
+      status.textContent = `已保存 ${megabytes(chosen.size)}`
+      // 旧的那段这时才删：新的已经落库，中途失败也不会两头落空
+      void pruneVideos(id)
+    }).catch((error: unknown) => {
+      status.textContent = `保存失败：${error instanceof Error ? error.message : String(error)}`
+    })
+  }
+
   file.addEventListener('change', () => {
     const chosen = file.files?.[0]
     if (chosen === undefined) return
+    // 同一个文件连选两次不会触发 change，清掉值才能重选
+    file.value = ''
+    if (chosen.type.startsWith('video/')) { takeVideo(chosen); return }
     status.textContent = '处理中…'
     void imageToDataUri(chosen).then((uri) => {
-      set('image', uri)
+      config = { ...config, image: uri, videoId: '', videoName: '' }
       syncInputs()
+      preview()
+      void pruneVideos('')
       // 原图常有几 MB，超长的值会被 CSS 整条丢弃，所以统一缩放压缩后再存
       status.textContent = `已压缩至 ${Math.round(uri.length / 1024)} KB`
     }).catch((error: unknown) => {
@@ -130,8 +218,10 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
     })
   })
   clear.addEventListener('click', () => {
-    set('image', '')
+    config = { ...config, image: '', videoId: '', videoName: '' }
     syncInputs()
+    preview()
+    void pruneVideos('')
     status.textContent = ''
   })
   root.appendChild(el('div', { class: 'ss-row' },
@@ -157,8 +247,8 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
   }
 
   const percent = (value: number): string => `${String(Math.round(value * 100))}%`
-  const imageOpacity = slider('图片浓度', 'imageOpacity', 0, 1, 0.01, percent)
-  const imageBlur = slider('图片模糊', 'imageBlur', 0, 40, 1, v => `${String(Math.round(v))}px`)
+  const imageOpacity = slider('背景浓度', 'imageOpacity', 0, 1, 0.01, percent)
+  const imageBlur = slider('背景模糊', 'imageBlur', 0, 40, 1, v => `${String(Math.round(v))}px`)
   const wash = slider('蒙版强度', 'wash', 0, 1, 0.01, percent)
   const transparency = slider('界面透明', 'transparency', 0, 1, 0.01, percent)
 
@@ -186,9 +276,7 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
     accent.value = config.accent
     bgDark.value = config.bgDark
     bgLight.value = config.bgLight
-    thumb.style.backgroundImage = config.image === '' ? 'none' : `url("${config.image}")`
-    thumb.style.background = config.image === '' ? 'var(--skin-bg, #171817)' : thumb.style.background
-    if (config.image !== '') thumb.style.backgroundImage = `url("${config.image}")`
+    syncThumb()
     for (const [input, value] of [
       [imageOpacity, config.imageOpacity], [imageBlur, config.imageBlur],
       [wash, config.wash], [transparency, config.transparency],

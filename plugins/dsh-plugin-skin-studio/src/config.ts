@@ -11,9 +11,17 @@ export interface SkinConfig {
   bgLight: string
   /** 背景图，data URI；空字符串表示纯色底。 */
   image: string
-  /** 背景图不透明度 0~1。 */
+  /**
+   * 背景视频的 id；空字符串表示没有视频。视频本体存在 IndexedDB（见 video-store），
+   * 配置里只留标识——几十 MB 的二进制既塞不进 localStorage，也不该跟着配置到处走。
+   * 有视频时它优先于背景图。
+   */
+  videoId: string
+  /** 视频文件名，仅用于界面回显。 */
+  videoName: string
+  /** 背景（图或视频）不透明度 0~1。 */
   imageOpacity: number
-  /** 背景图模糊半径（像素）。 */
+  /** 背景（图或视频）模糊半径（像素）。 */
   imageBlur: number
   /**
    * 界面透明度 0~1：0 为完全不透（看不见背景图），1 为最透。
@@ -30,6 +38,8 @@ export const DEFAULT_CONFIG: SkinConfig = {
   bgDark: '#171817',
   bgLight: '#f6f5f1',
   image: '',
+  videoId: '',
+  videoName: '',
   imageOpacity: 0.5,
   imageBlur: 0,
   transparency: 0.8,
@@ -68,6 +78,9 @@ export function normalizeConfig(raw: unknown): SkinConfig {
     bgLight: color(input.bgLight, DEFAULT_CONFIG.bgLight),
     // 背景图只接受 data URI：外链会把用户的界面暴露给第三方站点
     image: typeof input.image === 'string' && input.image.startsWith('data:image/') ? input.image : '',
+    // id 由本插件生成，限定字符集，免得被拿去当 IndexedDB 的任意键用
+    videoId: typeof input.videoId === 'string' && /^[a-z0-9-]{1,64}$/i.test(input.videoId) ? input.videoId : '',
+    videoName: typeof input.videoName === 'string' ? input.videoName.slice(0, 120) : '',
     imageOpacity: clamp(input.imageOpacity, 0, 1, DEFAULT_CONFIG.imageOpacity),
     imageBlur: clamp(input.imageBlur, 0, 40, DEFAULT_CONFIG.imageBlur),
     transparency: clamp(input.transparency, 0, 1, DEFAULT_CONFIG.transparency),
