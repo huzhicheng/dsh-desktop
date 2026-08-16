@@ -5,9 +5,12 @@
  * 主窗口加载本地 Web UI → 常驻托盘 → 定时在线升级。
  */
 
-import { app, dialog, ipcMain, shell } from 'electron'
+import { join } from 'node:path'
+import { app, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { ensureAcpProfile } from './acp-profile'
-import { bridgeHasSecret, createBridgeService, readBridgeConfig, writeBridgeConfig } from './bridge-service'
+import {
+  bridgeHasSecret, bridgeHasTelegramToken, createBridgeService, readBridgeConfig, writeBridgeConfig,
+} from './bridge-service'
 import {
   cancelFeishuRegistration, permissionJson, REQUIRED_EVENTS, startFeishuRegistration,
 } from './feishu-register'
@@ -113,6 +116,13 @@ async function checkShellUpdate(): Promise<void> {
 async function boot(): Promise<void> {
   // Windows 通知与任务栏归组依赖 AppUserModelID（与 electron-builder 的 appId 一致）
   if (process.platform === 'win32') app.setAppUserModelId('com.moon.dsh-desktop')
+  // 开发态的 Dock 图标：打包后的图标来自 .app 里的 icns，而 `electron .` 直接
+  // 跑的是 Electron 二进制、Dock 显示它自带的图标。这里手动设一下，
+  // 免得开发时看到的图标和用户看到的不一致。
+  if (process.platform === 'darwin' && !app.isPackaged) {
+    const icon = nativeImage.createFromPath(join(__dirname, '../../build/icon.png'))
+    if (!icon.isEmpty()) app.dock?.setIcon(icon)
+  }
   initLogger(logsDir())
   log.info(`${APP_DISPLAY_NAME} 启动（app ${app.getVersion()}）`)
   try {
@@ -237,7 +247,11 @@ function registerBridgeIpc(): void {
     events: [...REQUIRED_EVENTS],
   }))
 
-  ipcMain.handle('bridge:get-config', () => ({ ...readBridgeConfig(), hasSecret: bridgeHasSecret() }))
+  ipcMain.handle('bridge:get-config', () => ({
+    ...readBridgeConfig(),
+    hasSecret: bridgeHasSecret(),
+    hasTelegramToken: bridgeHasTelegramToken(),
+  }))
 
   ipcMain.handle('bridge:save-config', async (_event, incoming: Partial<BridgeConfig>) => {
     try {

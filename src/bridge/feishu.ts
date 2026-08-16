@@ -6,8 +6,9 @@
  * policy/safety 配置，不自己造一遍。
  */
 
+import { OutputPipe } from './output'
 import { createLarkChannel, Domain, type LarkChannel, type CardStreamController, type NormalizedMessage } from '@larksuiteoapi/node-sdk'
-import type { ApprovalDecision, BridgeConfig } from './types'
+import type { ApprovalDecision, BridgeConfig, Channel } from './types'
 
 /** 等待审批的一张卡片。 */
 interface PendingApproval {
@@ -29,44 +30,7 @@ export interface FeishuChannelOptions {
 }
 
 /** agent 输出的推送管道：ACP 那侧异步吐字，SDK 这侧需要一个 producer 去消费。 */
-export class OutputPipe {
-  private readonly queue: string[] = []
-  private wake: (() => void) | undefined
-  private closed = false
-  private failure: string | undefined
-
-  push(text: string): void {
-    this.queue.push(text)
-    this.wake?.()
-  }
-
-  close(failure?: string): void {
-    this.closed = true
-    this.failure = failure
-    this.wake?.()
-  }
-
-  /** 把队列里的内容持续写进流式卡片，直到 close()。 */
-  async drainTo(append: (chunk: string) => Promise<void>): Promise<void> {
-    let first = true
-    for (;;) {
-      const chunk = this.queue.shift()
-      if (chunk !== undefined) {
-        await append(first ? chunk : `\n\n${chunk}`)
-        first = false
-        continue
-      }
-      if (this.closed) break
-      await new Promise<void>((resolve) => { this.wake = resolve })
-      this.wake = undefined
-    }
-    if (this.failure !== undefined) {
-      await append(first ? this.failure : `\n\n${this.failure}`)
-    }
-  }
-}
-
-export class FeishuChannel {
+export class FeishuChannel implements Channel {
   readonly name = 'feishu'
   private readonly options: FeishuChannelOptions
   private channel: LarkChannel | undefined
@@ -273,3 +237,4 @@ export class FeishuChannel {
 }
 
 export type { CardStreamController }
+export { OutputPipe }

@@ -6,8 +6,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { AcpPool } from './acp'
-import { FeishuChannel, OutputPipe } from './feishu'
-import type { BridgeConfig, WorkspaceEntry } from './types'
+import { OutputPipe } from './output'
+import type { BridgeConfig, WorkspaceEntry, Channel } from './types'
 
 interface ChatState {
   /** 当前工作目录名。 */
@@ -28,7 +28,7 @@ const HELP = [
 export interface BridgeCoreOptions {
   config: BridgeConfig
   pool: AcpPool
-  channel: FeishuChannel
+  channel: Channel
   /** 会话与工作目录的绑定关系存哪。 */
   stateFile: string
   log: (message: string) => void

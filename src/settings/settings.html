@@ -108,7 +108,7 @@
 
   <main>
     <section>
-      <h2>连接</h2>
+      <h2>飞书</h2>
 
       <!-- 主路径：扫码让飞书自动建应用、配权限与事件订阅，用户一个字段都不用填 -->
       <div class="setup" id="setup">
@@ -161,6 +161,29 @@
         </div>
       </div>
     </section>
+
+    </section>
+
+    <section>
+      <h2>Telegram</h2>
+      <div class="field switch">
+        <input type="checkbox" id="tgEnabled">
+        <label for="tgEnabled" style="margin:0">启用 Telegram</label>
+      </div>
+      <div class="field">
+        <label for="tgToken">Bot Token</label>
+        <input type="password" id="tgToken" placeholder="留空表示不修改" spellcheck="false">
+        <div class="hint" id="tgTokenHint"></div>
+        <div class="hint" style="margin-top:6px">
+          在 Telegram 里找 <b>@BotFather</b> 发 <code>/newbot</code>，按提示起个名字，
+          它会回一串形如 <code>123456:AA...</code> 的 token，粘到这里即可。<b>只需这一项</b>——
+          走长轮询，不需要公网地址，也不用在任何后台配置权限或审核。
+        </div>
+        <div class="hint" style="margin-top:6px">
+          白名单填 Telegram 的<b>数字用户 ID</b>（和飞书的 open_id 放在同一个列表里）。
+          不知道自己的 ID 就直接给机器人发一句话，它会把你的 ID 回给你。
+        </div>
+      </div>
 
     <section>
       <h2>谁可以用</h2>
@@ -286,6 +309,8 @@
       $('appId').value = config.feishu.appId ?? ''
       $('domain').value = config.feishu.domain ?? 'feishu'
       $('secretHint').textContent = config.hasSecret ? '已保存，留空则沿用' : '尚未设置'
+      $('tgEnabled').checked = config.telegram?.enabled ?? false
+      $('tgTokenHint').textContent = config.hasTelegramToken ? '已保存，留空则沿用' : '尚未设置'
       $('allowedUsers').value = (config.allowedUserIds ?? []).join('\n')
       $('permissionMode').value = config.permissionMode ?? 'read-only'
       workspaces = (config.workspaces ?? []).map((entry) => ({ ...entry }))
@@ -362,6 +387,10 @@
           appId: $('appId').value.trim(),
           appSecret: $('appSecret').value,
           domain: $('domain').value,
+        },
+        telegram: {
+          enabled: $('tgEnabled').checked,
+          token: $('tgToken').value,
         },
         allowedUserIds: $('allowedUsers').value.split('\n').map((line) => line.trim()).filter(Boolean),
         workspaces: workspaces.filter((entry) => entry.name.trim() && entry.path.trim()),

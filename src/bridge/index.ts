@@ -9,6 +9,9 @@ import { readFileSync } from 'node:fs'
 import { AcpPool } from './acp'
 import { BridgeCore } from './core'
 import { FeishuChannel } from './feishu'
+import { ChannelRouter, tagChatKey } from './router'
+import { TelegramChannel } from './telegram'
+import type { Channel } from './types'
 import { DEFAULT_CONFIG, type BridgeConfig } from './types'
 
 function required(name: string): string {
@@ -40,7 +43,7 @@ async function main(): Promise<void> {
 
   // pool 要往 core 推文本、core 要用 channel 发卡片，三者互相引用，
   // 用一个可变引用把环打开（回调都在启动完成后才会被调到）。
-  const channelRef: { current: FeishuChannel | undefined } = { current: undefined }
+  const channelRef: { current: Channel | undefined } = { current: undefined }
   const coreRef: { current: BridgeCore | undefined } = { current: undefined }
 
   const pool = new AcpPool({
@@ -70,13 +73,27 @@ async function main(): Promise<void> {
     log,
   })
 
-  const channel = new FeishuChannel({
-    config,
-    onMessage: (input) => {
-      void coreRef.current?.handleMessage(input).catch((error: unknown) => { log(`[bridge] 处理消息失败：${String(error)}`) })
-    },
-    log,
-  })
+  // 按启用状态装配通道。会话标识统一加 `通道名:` 前缀，回复才知道发回哪家；
+  // 前缀在这里加、由 ChannelRouter 剥，各通道自身不必知道这件事。
+  const deliver = (channelName: string) => (input: {
+    chatId: string; userId: string; text: string; messageId: string
+  }): void => {
+    void coreRef.current
+      ?.handleMessage({ ...input, chatId: tagChatKey(channelName, input.chatId) })
+      .catch((error: unknown) => { log(`[bridge] 处理消息失败：${String(error)}`) })
+  }
+
+  const channels: Channel[] = []
+  if (config.feishu.enabled) {
+    channels.push(new FeishuChannel({ config, onMessage: deliver('feishu'), log }))
+  }
+  if (config.telegram.enabled) {
+    channels.push(new TelegramChannel({ getConfig: () => config, onMessage: deliver('telegram'), log }))
+  }
+  if (channels.length === 0) throw new Error('没有启用任何通道')
+  log(`[bridge] 已装配通道：${channels.map(item => item.name).join('、')}`)
+
+  const channel = new ChannelRouter(channels, log)
   channelRef.current = channel
 
   const core = new BridgeCore({

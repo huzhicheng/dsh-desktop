@@ -27,8 +27,12 @@ function configFile(): string {
   return join(dataRoot(), 'bridge', 'config.json')
 }
 
-function secretFile(): string {
-  return join(dataRoot(), 'bridge', 'app-secret.bin')
+/**
+ * 机密单独加密存放，不进明文配置。按名字区分，加通道时只需多一个名字。
+ * @param name - 机密标识，如 feishu-app-secret、telegram-token。
+ */
+function secretFile(name = 'app-secret'): string {
+  return join(dataRoot(), 'bridge', `${name}.bin`)
 }
 
 function stateFile(): string {
@@ -55,13 +59,19 @@ export function readBridgeConfig(): BridgeConfig {
     ...DEFAULT_CONFIG,
     ...stored,
     feishu: { ...DEFAULT_CONFIG.feishu, ...stored.feishu, appSecret: '' },
+    telegram: { ...DEFAULT_CONFIG.telegram, ...stored.telegram, token: '' },
   }
 }
 
-/** 读出明文 App Secret（仅在启动子进程时用）。 */
-function readSecret(): string {
+/** 至少启用了一个通道才需要起桥接进程。 */
+function anyChannelEnabled(config: BridgeConfig): boolean {
+  return config.feishu.enabled || config.telegram.enabled
+}
+
+/** 读出某个明文机密（仅在启动子进程时用）。 */
+function readSecret(name?: string): string {
   try {
-    const raw = readFileSync(secretFile())
+    const raw = readFileSync(secretFile(name))
     if (!safeStorage.isEncryptionAvailable()) return raw.toString('utf8')
     return safeStorage.decryptString(raw)
   } catch {
@@ -69,21 +79,34 @@ function readSecret(): string {
   }
 }
 
+/** 落盘一个机密；空串表示「不修改」，沿用已存的。 */
+function writeSecret(value: string, name?: string): void {
+  if (value === '') return
+  const payload = safeStorage.isEncryptionAvailable()
+    ? safeStorage.encryptString(value)
+    : Buffer.from(value, 'utf8')
+  writeFileSync(secretFile(name), payload, { mode: 0o600 })
+}
+
 /** 是否已经存过 App Secret（设置页据此显示「留空则沿用」）。 */
 export function bridgeHasSecret(): boolean {
   return readSecret() !== ''
 }
 
+/** 是否已存过 Telegram token（设置页据此显示「留空则沿用」）。 */
+export function bridgeHasTelegramToken(): boolean {
+  return readSecret('telegram-token') !== ''
+}
+
 export function writeBridgeConfig(next: BridgeConfig): void {
   mkdirSync(join(dataRoot(), 'bridge'), { recursive: true })
-  const secret = next.feishu.appSecret
-  if (secret !== '') {
-    const payload = safeStorage.isEncryptionAvailable()
-      ? safeStorage.encryptString(secret)
-      : Buffer.from(secret, 'utf8')
-    writeFileSync(secretFile(), payload, { mode: 0o600 })
+  writeSecret(next.feishu.appSecret)
+  writeSecret(next.telegram.token, 'telegram-token')
+  const persisted: BridgeConfig = {
+    ...next,
+    feishu: { ...next.feishu, appSecret: '' },
+    telegram: { ...next.telegram, token: '' },
   }
-  const persisted: BridgeConfig = { ...next, feishu: { ...next.feishu, appSecret: '' } }
   writeFileSync(configFile(), JSON.stringify(persisted, null, 2), { mode: 0o600 })
 }
 
@@ -114,7 +137,11 @@ export function createBridgeService(options: BridgeServiceOptions = {}): BridgeS
   /** 把明文配置写到只给子进程读的文件，进程退出后删掉。 */
   const writeRuntimeConfig = (): string => {
     const config = readBridgeConfig()
-    const runtime: BridgeConfig = { ...config, feishu: { ...config.feishu, appSecret: readSecret() } }
+    const runtime: BridgeConfig = {
+      ...config,
+      feishu: { ...config.feishu, appSecret: readSecret() },
+      telegram: { ...config.telegram, token: readSecret('telegram-token') },
+    }
     mkdirSync(join(dataRoot(), 'bridge'), { recursive: true })
     writeFileSync(runtimeConfigFile(), JSON.stringify(runtime), { mode: 0o600 })
     return runtimeConfigFile()
@@ -205,7 +232,7 @@ export function createBridgeService(options: BridgeServiceOptions = {}): BridgeS
     async start(entry: string): Promise<void> {
       if (child !== undefined) return
       const config = readBridgeConfig()
-      if (!config.feishu.enabled) {
+      if (!anyChannelEnabled(config)) {
         setStatus({ state: 'stopped' })
         return
       }
@@ -220,7 +247,7 @@ export function createBridgeService(options: BridgeServiceOptions = {}): BridgeS
       stopping = false
       currentEntry = entry
       const config = readBridgeConfig()
-      if (!config.feishu.enabled) {
+      if (!anyChannelEnabled(config)) {
         setStatus({ state: 'stopped' })
         return
       }
