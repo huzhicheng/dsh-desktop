@@ -19,8 +19,9 @@
 :root {
   /* 底色与强调色 */
   --skin-bg: #171817;
-  --skin-text: #f3f2ed;
-  --skin-muted: #aaa9a2;
+  /* 文字以纯白/纯黑为主：可读性优先于风格，带色的浅灰在半透明表面上压不住背景 */
+  --skin-text: #ffffff;
+  --skin-muted: #b9b8b3;
   --skin-accent: #d3aa61;
   --skin-accent-ink: #201a10;
 
@@ -75,8 +76,8 @@
 
 html[data-skin-mode="light"] {
   --skin-bg: #f6f5f1;
-  --skin-text: #201f1c;
-  --skin-muted: #6f6d64;
+  --skin-text: #000000;
+  --skin-muted: #5a5854;
   --skin-accent: #a8763a;
   --skin-accent-ink: #fffaf0;
   --skin-wash: rgba(246, 245, 241, 0.6);
@@ -227,19 +228,30 @@ body[data-ds-dark-theme] {
   --dsw-specific-sidebar-nav-item-active-accent: color-mix(in srgb, var(--skin-accent) 24%, transparent);
   --dsw-specific-sidebar-nav-item-hover: color-mix(in srgb, var(--skin-text) 7%, transparent);
 
+  /*
+   * 文字层级：全部由主文字色（纯黑/纯白）掺底色得到，最淡的一档也留足
+   * 4.5:1 的余量——实测旧的说明文字只有 4.06、弱化文字 3.54，都不达标。
+   * 对比度滑块只往上推，不会把任何一档拉到门槛以下。
+   */
   --dsw-alias-label-primary: var(--skin-text);
   --dsw-alias-label-primary-bluish: var(--skin-text);
-  --dsw-alias-label-primary-dimmed: color-mix(in srgb, var(--skin-text) 62%, transparent);
+  --dsw-alias-label-primary-dimmed: color-mix(in srgb, var(--skin-text) 78%, transparent);
   --dsw-alias-label-primary-foreground: var(--skin-text);
   --dsw-alias-label-primary-inverted: var(--skin-accent-ink);
-  --dsw-alias-label-secondary: color-mix(in srgb, var(--skin-text) calc(78% + var(--skin-contrast) * 22%), var(--skin-bg));
-  --dsw-alias-label-tertiary: color-mix(in srgb, var(--skin-text) calc(var(--skin-contrast) * 62%), var(--skin-muted));
-  --dsw-alias-label-caption: color-mix(in srgb, var(--skin-muted) calc(82% + var(--skin-contrast) * 18%), var(--skin-bg));
-  --dsw-alias-label-dimmed: color-mix(in srgb, var(--skin-muted) calc(64% + var(--skin-contrast) * 36%), var(--skin-bg));
+  --dsw-alias-label-secondary: color-mix(in srgb, var(--skin-text) calc(88% + var(--skin-contrast) * 12%), var(--skin-bg));
+  --dsw-alias-label-tertiary: color-mix(in srgb, var(--skin-text) calc(72% + var(--skin-contrast) * 23%), var(--skin-bg));
+  --dsw-alias-label-caption: color-mix(in srgb, var(--skin-text) calc(64% + var(--skin-contrast) * 28%), var(--skin-bg));
+  --dsw-alias-label-dimmed: color-mix(in srgb, var(--skin-text) calc(58% + var(--skin-contrast) * 30%), var(--skin-bg));
 
+  /*
+   * 强调色分两支。原色留给按钮填充（上面压的是 accent-ink，对比本来就够）；
+   * 当文字用时必须另配一支往黑/白掺过的——实测原色在浅色表面上只有 1.95:1，
+   * 微软的 acrylic 文档也点名说强调色文字在半透明表面上通不过对比度要求。
+   */
+  --skin-accent-text: color-mix(in srgb, var(--skin-accent) 55%, var(--skin-text));
   --dsw-alias-brand-primary: var(--skin-accent);
   --dsw-alias-brand-primary-invert: var(--skin-accent-ink);
-  --dsw-alias-brand-text: var(--skin-accent);
+  --dsw-alias-brand-text: var(--skin-accent-text);
   --dsw-alias-brand-primary-new-colorprimary-new-color: var(--skin-accent);
 
   --dsw-alias-border-l1: color-mix(in srgb, var(--skin-text) 7%, transparent);
@@ -277,7 +289,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-markdown-code-block-banner: color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg));
   --dsw-alias-markdown-code-segment-selected: color-mix(in srgb, var(--skin-accent) 18%, transparent);
   --dsw-alias-markdown-code-segment-unselected: transparent;
-  --dsw-alias-markdown-citation: var(--skin-accent);
+  --dsw-alias-markdown-citation: var(--skin-accent-text);
   --dsw-alias-markdown-tag: color-mix(in srgb, var(--skin-accent) 16%, transparent);
   --dsw-alias-markdown-placeholder: var(--skin-muted);
 
@@ -290,7 +302,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-state-warn-secondary: rgba(217, 164, 65, 0.16);
   --dsw-alias-state-warn-tertiary: rgba(217, 164, 65, 0.1);
   --dsw-alias-state-warn-label: #d9a441;
-  --dsw-alias-state-business-primary: var(--skin-accent);
+  --dsw-alias-state-business-primary: var(--skin-accent-text);
   --dsw-alias-state-business-tertiary: color-mix(in srgb, var(--skin-accent) 14%, transparent);
 
   --dsw-alias-tooltip-bg: color-mix(in srgb, var(--skin-text) 14%, var(--skin-bg));
@@ -370,4 +382,33 @@ html.skin-studio code,
 html.skin-studio input,
 html.skin-studio textarea {
   text-shadow: none;
+}
+
+/* ── 无障碍降级 ───────────────────────────────────────────────────
+ *
+ * 系统里关掉透明效果时（macOS「辅助功能 → 显示 → 降低透明度」、
+ * Windows「个性化 → 颜色 → 透明效果」），所有表面退成纯色、背景层整个撤掉。
+ * 这是微软对 acrylic 明确要求的降级行为：用户关了透明，界面必须仍然可用。
+ *
+ * 用 !important 是必须的：插件把 --skin-transparency 写在 documentElement 的
+ * 行内样式上，样式表里不加 !important 压不过行内。
+ */
+@media (prefers-reduced-transparency: reduce) {
+  html.skin-studio {
+    --skin-transparency: 0 !important;
+    --skin-text-halo: none !important;
+  }
+  /* 表面已经不透了，背景层留着也看不见，撤掉还省一层合成 */
+  html.skin-studio #skin-studio-art > .skin-backdrop,
+  html.skin-studio #skin-studio-art > .skin-canvas,
+  html.skin-studio #skin-studio-art > .skin-video {
+    display: none !important;
+  }
+}
+
+/* 系统要求更高对比时，文字直接拉到最强，不再由滑块决定 */
+@media (prefers-contrast: more) {
+  html.skin-studio {
+    --skin-contrast: 1 !important;
+  }
 }

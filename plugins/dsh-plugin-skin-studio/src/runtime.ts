@@ -96,10 +96,20 @@ function bgChannels(config: SkinConfig, dark: boolean): [number, number, number]
   ]
 }
 
+/**
+ * 深色蒙版的折减系数。
+ *
+ * 同样一张图，压暗比压亮更容易盖住内容——Material 给的建议区间是深色蒙版
+ * 20~40%、浅色蒙版 40~60%。滑块只有一个，所以在暗色主题下按这个比例折一下，
+ * 两边才都落在各自的推荐区间里（0.58 的默认值 → 浅色 58%、深色 38%）。
+ */
+const DARK_WASH_FACTOR = 0.65
+
 /** 把 wash 强度换算成盖在背景图上的颜色，明暗各取自己的底色。 */
 function washColor(config: SkinConfig, dark: boolean): string {
   const [r, g, b] = bgChannels(config, dark)
-  return `rgba(${r}, ${g}, ${b}, ${config.wash.toFixed(3)})`
+  const alpha = dark ? config.wash * DARK_WASH_FACTOR : config.wash
+  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`
 }
 
 /**

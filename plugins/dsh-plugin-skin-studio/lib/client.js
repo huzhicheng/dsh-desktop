@@ -211,9 +211,11 @@ function bgChannels(config, dark) {
     Number.parseInt(full.slice(4, 6), 16)
   ];
 }
+var DARK_WASH_FACTOR = 0.65;
 function washColor(config, dark) {
   const [r, g, b] = bgChannels(config, dark);
-  return `rgba(${r}, ${g}, ${b}, ${config.wash.toFixed(3)})`;
+  const alpha = dark ? config.wash * DARK_WASH_FACTOR : config.wash;
+  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
 }
 function textHalo(config, dark) {
   if (config.textContrast <= 0) return "none";
@@ -1104,8 +1106,9 @@ var skin_default = `/*
 :root {
   /* \u5E95\u8272\u4E0E\u5F3A\u8C03\u8272 */
   --skin-bg: #171817;
-  --skin-text: #f3f2ed;
-  --skin-muted: #aaa9a2;
+  /* \u6587\u5B57\u4EE5\u7EAF\u767D/\u7EAF\u9ED1\u4E3A\u4E3B\uFF1A\u53EF\u8BFB\u6027\u4F18\u5148\u4E8E\u98CE\u683C\uFF0C\u5E26\u8272\u7684\u6D45\u7070\u5728\u534A\u900F\u660E\u8868\u9762\u4E0A\u538B\u4E0D\u4F4F\u80CC\u666F */
+  --skin-text: #ffffff;
+  --skin-muted: #b9b8b3;
   --skin-accent: #d3aa61;
   --skin-accent-ink: #201a10;
 
@@ -1160,8 +1163,8 @@ var skin_default = `/*
 
 html[data-skin-mode="light"] {
   --skin-bg: #f6f5f1;
-  --skin-text: #201f1c;
-  --skin-muted: #6f6d64;
+  --skin-text: #000000;
+  --skin-muted: #5a5854;
   --skin-accent: #a8763a;
   --skin-accent-ink: #fffaf0;
   --skin-wash: rgba(246, 245, 241, 0.6);
@@ -1312,19 +1315,30 @@ body[data-ds-dark-theme] {
   --dsw-specific-sidebar-nav-item-active-accent: color-mix(in srgb, var(--skin-accent) 24%, transparent);
   --dsw-specific-sidebar-nav-item-hover: color-mix(in srgb, var(--skin-text) 7%, transparent);
 
+  /*
+   * \u6587\u5B57\u5C42\u7EA7\uFF1A\u5168\u90E8\u7531\u4E3B\u6587\u5B57\u8272\uFF08\u7EAF\u9ED1/\u7EAF\u767D\uFF09\u63BA\u5E95\u8272\u5F97\u5230\uFF0C\u6700\u6DE1\u7684\u4E00\u6863\u4E5F\u7559\u8DB3
+   * 4.5:1 \u7684\u4F59\u91CF\u2014\u2014\u5B9E\u6D4B\u65E7\u7684\u8BF4\u660E\u6587\u5B57\u53EA\u6709 4.06\u3001\u5F31\u5316\u6587\u5B57 3.54\uFF0C\u90FD\u4E0D\u8FBE\u6807\u3002
+   * \u5BF9\u6BD4\u5EA6\u6ED1\u5757\u53EA\u5F80\u4E0A\u63A8\uFF0C\u4E0D\u4F1A\u628A\u4EFB\u4F55\u4E00\u6863\u62C9\u5230\u95E8\u69DB\u4EE5\u4E0B\u3002
+   */
   --dsw-alias-label-primary: var(--skin-text);
   --dsw-alias-label-primary-bluish: var(--skin-text);
-  --dsw-alias-label-primary-dimmed: color-mix(in srgb, var(--skin-text) 62%, transparent);
+  --dsw-alias-label-primary-dimmed: color-mix(in srgb, var(--skin-text) 78%, transparent);
   --dsw-alias-label-primary-foreground: var(--skin-text);
   --dsw-alias-label-primary-inverted: var(--skin-accent-ink);
-  --dsw-alias-label-secondary: color-mix(in srgb, var(--skin-text) calc(78% + var(--skin-contrast) * 22%), var(--skin-bg));
-  --dsw-alias-label-tertiary: color-mix(in srgb, var(--skin-text) calc(var(--skin-contrast) * 62%), var(--skin-muted));
-  --dsw-alias-label-caption: color-mix(in srgb, var(--skin-muted) calc(82% + var(--skin-contrast) * 18%), var(--skin-bg));
-  --dsw-alias-label-dimmed: color-mix(in srgb, var(--skin-muted) calc(64% + var(--skin-contrast) * 36%), var(--skin-bg));
+  --dsw-alias-label-secondary: color-mix(in srgb, var(--skin-text) calc(88% + var(--skin-contrast) * 12%), var(--skin-bg));
+  --dsw-alias-label-tertiary: color-mix(in srgb, var(--skin-text) calc(72% + var(--skin-contrast) * 23%), var(--skin-bg));
+  --dsw-alias-label-caption: color-mix(in srgb, var(--skin-text) calc(64% + var(--skin-contrast) * 28%), var(--skin-bg));
+  --dsw-alias-label-dimmed: color-mix(in srgb, var(--skin-text) calc(58% + var(--skin-contrast) * 30%), var(--skin-bg));
 
+  /*
+   * \u5F3A\u8C03\u8272\u5206\u4E24\u652F\u3002\u539F\u8272\u7559\u7ED9\u6309\u94AE\u586B\u5145\uFF08\u4E0A\u9762\u538B\u7684\u662F accent-ink\uFF0C\u5BF9\u6BD4\u672C\u6765\u5C31\u591F\uFF09\uFF1B
+   * \u5F53\u6587\u5B57\u7528\u65F6\u5FC5\u987B\u53E6\u914D\u4E00\u652F\u5F80\u9ED1/\u767D\u63BA\u8FC7\u7684\u2014\u2014\u5B9E\u6D4B\u539F\u8272\u5728\u6D45\u8272\u8868\u9762\u4E0A\u53EA\u6709 1.95:1\uFF0C
+   * \u5FAE\u8F6F\u7684 acrylic \u6587\u6863\u4E5F\u70B9\u540D\u8BF4\u5F3A\u8C03\u8272\u6587\u5B57\u5728\u534A\u900F\u660E\u8868\u9762\u4E0A\u901A\u4E0D\u8FC7\u5BF9\u6BD4\u5EA6\u8981\u6C42\u3002
+   */
+  --skin-accent-text: color-mix(in srgb, var(--skin-accent) 55%, var(--skin-text));
   --dsw-alias-brand-primary: var(--skin-accent);
   --dsw-alias-brand-primary-invert: var(--skin-accent-ink);
-  --dsw-alias-brand-text: var(--skin-accent);
+  --dsw-alias-brand-text: var(--skin-accent-text);
   --dsw-alias-brand-primary-new-colorprimary-new-color: var(--skin-accent);
 
   --dsw-alias-border-l1: color-mix(in srgb, var(--skin-text) 7%, transparent);
@@ -1362,7 +1376,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-markdown-code-block-banner: color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg));
   --dsw-alias-markdown-code-segment-selected: color-mix(in srgb, var(--skin-accent) 18%, transparent);
   --dsw-alias-markdown-code-segment-unselected: transparent;
-  --dsw-alias-markdown-citation: var(--skin-accent);
+  --dsw-alias-markdown-citation: var(--skin-accent-text);
   --dsw-alias-markdown-tag: color-mix(in srgb, var(--skin-accent) 16%, transparent);
   --dsw-alias-markdown-placeholder: var(--skin-muted);
 
@@ -1375,7 +1389,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-state-warn-secondary: rgba(217, 164, 65, 0.16);
   --dsw-alias-state-warn-tertiary: rgba(217, 164, 65, 0.1);
   --dsw-alias-state-warn-label: #d9a441;
-  --dsw-alias-state-business-primary: var(--skin-accent);
+  --dsw-alias-state-business-primary: var(--skin-accent-text);
   --dsw-alias-state-business-tertiary: color-mix(in srgb, var(--skin-accent) 14%, transparent);
 
   --dsw-alias-tooltip-bg: color-mix(in srgb, var(--skin-text) 14%, var(--skin-bg));
@@ -1455,6 +1469,35 @@ html.skin-studio code,
 html.skin-studio input,
 html.skin-studio textarea {
   text-shadow: none;
+}
+
+/* \u2500\u2500 \u65E0\u969C\u788D\u964D\u7EA7 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+ *
+ * \u7CFB\u7EDF\u91CC\u5173\u6389\u900F\u660E\u6548\u679C\u65F6\uFF08macOS\u300C\u8F85\u52A9\u529F\u80FD \u2192 \u663E\u793A \u2192 \u964D\u4F4E\u900F\u660E\u5EA6\u300D\u3001
+ * Windows\u300C\u4E2A\u6027\u5316 \u2192 \u989C\u8272 \u2192 \u900F\u660E\u6548\u679C\u300D\uFF09\uFF0C\u6240\u6709\u8868\u9762\u9000\u6210\u7EAF\u8272\u3001\u80CC\u666F\u5C42\u6574\u4E2A\u64A4\u6389\u3002
+ * \u8FD9\u662F\u5FAE\u8F6F\u5BF9 acrylic \u660E\u786E\u8981\u6C42\u7684\u964D\u7EA7\u884C\u4E3A\uFF1A\u7528\u6237\u5173\u4E86\u900F\u660E\uFF0C\u754C\u9762\u5FC5\u987B\u4ECD\u7136\u53EF\u7528\u3002
+ *
+ * \u7528 !important \u662F\u5FC5\u987B\u7684\uFF1A\u63D2\u4EF6\u628A --skin-transparency \u5199\u5728 documentElement \u7684
+ * \u884C\u5185\u6837\u5F0F\u4E0A\uFF0C\u6837\u5F0F\u8868\u91CC\u4E0D\u52A0 !important \u538B\u4E0D\u8FC7\u884C\u5185\u3002
+ */
+@media (prefers-reduced-transparency: reduce) {
+  html.skin-studio {
+    --skin-transparency: 0 !important;
+    --skin-text-halo: none !important;
+  }
+  /* \u8868\u9762\u5DF2\u7ECF\u4E0D\u900F\u4E86\uFF0C\u80CC\u666F\u5C42\u7559\u7740\u4E5F\u770B\u4E0D\u89C1\uFF0C\u64A4\u6389\u8FD8\u7701\u4E00\u5C42\u5408\u6210 */
+  html.skin-studio #skin-studio-art > .skin-backdrop,
+  html.skin-studio #skin-studio-art > .skin-canvas,
+  html.skin-studio #skin-studio-art > .skin-video {
+    display: none !important;
+  }
+}
+
+/* \u7CFB\u7EDF\u8981\u6C42\u66F4\u9AD8\u5BF9\u6BD4\u65F6\uFF0C\u6587\u5B57\u76F4\u63A5\u62C9\u5230\u6700\u5F3A\uFF0C\u4E0D\u518D\u7531\u6ED1\u5757\u51B3\u5B9A */
+@media (prefers-contrast: more) {
+  html.skin-studio {
+    --skin-contrast: 1 !important;
+  }
 }
 `;
 
