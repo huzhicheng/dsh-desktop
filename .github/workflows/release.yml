@@ -49,8 +49,39 @@ jobs:
           fi
           echo "版本一致：$PKG"
 
-  build:
+  # 先把草稿 Release 建出来，再让两个平台往同一个里传。
+  # 否则 mac 与 windows 并行时都发现「没有对应 Release」，会各建一个草稿，
+  # 产物被劈成两半（实测踩过：一条只有 dmg，另一条只有 exe）。
+  prepare-release:
     needs: check
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: tag
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then TAG="${GITHUB_REF_NAME}"
+          else TAG="v$(node -p "require('./package.json').version")"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "目标 Release：$TAG"
+      - name: 确保草稿 Release 存在
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "已存在，复用"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft \
+              --title "$TAG" --notes "由 CI 自动构建，确认无误后再点发布。"
+          fi
+
+  build:
+    needs: prepare-release
     strategy:
       # 一个平台失败不影响另一个继续，便于单独重跑
       fail-fast: false
