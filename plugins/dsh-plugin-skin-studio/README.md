@@ -1,80 +1,73 @@
-# dsh-plugin-skin-studio
+# Skin Studio
 
-DeepSeek Harness 的皮肤插件：换背景图、调透明度与配色。风格参考
-[codex-skin-studio](https://github.com/) 的「玻璃盖在图片上」做法。
+给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web UI 换个样子：
+背景图或视频、字体、配色、透明度。
 
-它是一个**标准的 dsh 插件**，不是外部套壳的注入——装进 profile 之后，
-Harness 的 Web UI 自己就是这个样子，命令行启动、桌面端启动都一样生效。
+[English](README.en.md)
+
+它是**标准的 dsh 插件**，不是外部套壳的注入——装进 profile 之后，命令行启动
+`dsh web` 和用桌面端打开都一样生效。
 
 ## 安装
 
 ```sh
-dsh plugin --profile web add dsh-plugin-skin-studio   # 从 npm
-dsh plugin --profile web add /path/to/this/folder     # 或本地目录
+dsh plugin --profile web add dsh-plugin-skin-studio
 ```
 
-装完重启 `dsh web`，皮肤即生效。配置入口在 Web UI 的「设置 → 插件 → 皮肤」。
+重启 `dsh web` 即可。入口在侧栏底部的「皮肤」。
 
-卸载：`dsh plugin --profile web remove dsh-plugin-skin-studio`。
+卸载：`dsh plugin --profile web remove dsh-plugin-skin-studio`
 
-## 可调项
+## 能调什么
 
-- **配色预设**：暖砂 / 青竹 / 墨蓝 / 绛梅 / 素石
-- **强调色**与**明暗底色**：按钮、链接、选中态跟着走
-- **背景图**：选一张本地图片；浏览器内会先缩到最长边 1920px 再转 JPEG
-  （原图动辄几 MB，转成 data URI 会超出 CSS 对属性值的长度限制被整条丢弃，
-  实测 4MB 的图 `background-image` 直接变成 `none`）
-- **图片浓度 / 模糊**：背景图本身的强度
-- **蒙版强度**：盖在背景图之上压暗它，越大界面越清晰、图越淡
-- **界面透明**：所有表面让出多少给背景图。上限刻意收窄，再透文字就压不住图了
+**文字**
 
-改动即时预览，「保存」后持久化。
+- 字体：从本机装的全部字体里选，每一项用它自己的字体显示
+- 文字浓度：各级文字往主文字色靠拢的程度
+- 文字描边：给字描一圈硬边。默认关闭，背景深或杂乱、字压不住时再开
 
-## 实现要点
+**背景**
 
-**换肤只改变量，不碰 dsh 的结构。** dsh 的样式分三层，皮肤逐层覆盖：
+- 图片或 mp4 视频，四种适配方式（默认「自适应」完整显示，不裁边）
+- 浓度、模糊、蒙版强度、界面透明
+- 淡雅 / 适中 / 清晰三档一键切换
 
-| 层 | 变量 | 数量 |
-| --- | --- | --- |
-| 色板 | `--dsw-static-*` | 品牌色阶整条换成强调色 |
-| 语义 | `--dsw-alias-*` | 78 个，表面/文字/描边/状态 |
-| 组件 | `--dsw-specific-*`、`--dsw-hovercard-bg` | 侧栏、输入框、气泡等不走语义层的部分 |
+**配色**
 
-因为一个结构选择器都没用到，dsh 升级换了组件实现，皮肤依然有效。
+- 五个预设：暖砂 / 青竹 / 墨蓝 / 绛梅 / 素石
+- 强调色与明暗底色可自定义，按钮、链接、选中态跟着走
 
-**背景图靠一个画布层。** 页面最底层放固定的 `#skin-studio-art`（模糊垫底层 +
-主图层 + 蒙版层，z-index -1），界面所有表面改成半透明，图便透上来。
+## 一些取舍
 
-**装本地插件可以直接选目录。** 「安装新插件」里除了手填路径，还有一个「选择目录…」
-按钮，走 dsh 的 `ctx.directoryPicker` seam：桌面端判定为 `native`，在宿主屏幕上弹原生
-选择器，选完把绝对路径填进输入框（不直接安装，留一步让人核对）。远程浏览器访问时
-seam 给的是 `browse` 后端——原生对话框弹在服务器上没人看得见——此时按钮自动隐藏，
-退回手填，这也是该 seam 文档写明的未知/不匹配 kind 处理方式。
+**配置存 localStorage，视频存 IndexedDB。** dsh 的设置体系对树外插件是封死的
+（`packages/host/apiproxy` 里有一份硬编码的 namespace 白名单），皮肤本就是纯展示
+偏好，存本地合适。视频动辄几十 MB，localStorage 只有约 5MB，所以另存 IndexedDB，
+配置里只留一个 id——一份配置要能复制、能分享，不该塞进二进制。
 
-注意这个服务由 `directory-picker-auto` 在启动时判定宿主处境后才挂进内存根树，
-本插件 apply 那一刻未必已经就绪，所以是**每次请求现取**而不是启动时缓存一次。
+**背景图会先缩到最长边 1920px 再转 JPEG。** 原图动辄几 MB，转成 data URI 会超出
+CSS 对属性值的长度限制被整条丢弃（实测 4MB 的图 `background-image` 直接变 `none`）。
 
-**配置存在浏览器本地（localStorage），不走 dsh 的 settings 体系。**
-后者对树外插件是封死的：`packages/host/apiproxy/src/api-proxy.ts` 里有一份硬编码的
-`WEB_SETTINGS_NAMESPACES` 白名单，不在其中的 namespace 一律返回
-`settings-not-exposed`（源码注释写明这是待改的临时设计）。皮肤是纯展示偏好，
-存本地既合适也绕开了这条限制。注册设置页的 slot 本身不受白名单限制。
+**只改变量，不碰结构。** 换肤全部通过覆盖 dsh 的 `--dsw-static-*` 色板与
+`--dsw-alias-*` 语义层完成，所以 dsh 升级换了组件实现，皮肤依然有效。仅有三处
+用到结构选择器（侧栏留白、侧栏底色去重、Markdown 容器字体），匹配不上时各自退回
+原样，不会把界面弄坏。
 
-## 开发中踩过的三个坑
+**尊重系统的无障碍设置。** 开了「降低透明度」就退成纯色、撤掉背景层；开了
+「减弱动态效果」视频只显示首帧；系统要求高对比时文字自动拉满。
 
-写别的 dsh 插件时同样会遇到：
-
-1. **patch 插入新行要用 `- insert:`**。顶层直接写 `- id: xxx` 是「按 id 修改已有条目」，
-   对新插件会报 `patch: entry "xxx" not found`。
-2. **client bundle 不是普通 ESM**。dsh 页面用自己的模块加载器，产物必须是一次
-   `window.__ModuleLoader__.load({ id, factory })` 注册调用，factory 里用传入的
-   `require()` 取宿主模块。直接产出 ESM 会在页面里报 `Unexpected token 'export'`。
-3. **`ctx.effect(fn)` 的 fn 是 setup，会被立即执行**，它的返回值才是清理函数。
-   把 `dispose` 直接传进去，会让插件刚生效就被自己卸掉。
-
-## 构建
+## 开发
 
 ```sh
-npm install
-npm run build     # 产出 lib/index.js（Host 半）与 lib/client.js（浏览器半）
+npm run build   # 产出 lib/index.js（host 半侧）与 lib/client.js（浏览器半侧）
 ```
+
+浏览器半侧不是普通 ESM——dsh 页面用自己的模块加载器，产物必须是一次
+`window.__ModuleLoader__.load({ id, factory })` 调用，否则页面报
+`Unexpected token 'export'`。构建脚本已处理。
+
+本地调试：`dsh plugin --profile web add /path/to/this/folder`，之后改完
+`npm run build` 重启即可。
+
+## 许可
+
+MIT
