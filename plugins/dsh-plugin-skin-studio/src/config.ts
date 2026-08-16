@@ -61,6 +61,19 @@ export const PRESETS: readonly SkinPreset[] = [
   { id: 'slate', name: '素石', patch: { accent: '#9aa0a6', bgDark: '#161718', bgLight: '#f4f4f5' } },
 ]
 
+/**
+ * 背景强度档位。
+ *
+ * 「背景看得清不清楚」其实由三个量共同决定——背景浓度、蒙版强度、界面透明，
+ * 只调其中一个都到不了位。这里把三者绑成几档，一键切到想要的效果，
+ * 之后仍可用滑块微调。
+ */
+export const BACKGROUND_LEVELS: readonly SkinPreset[] = [
+  { id: 'soft', name: '淡雅', patch: { imageOpacity: 0.4, wash: 0.62, transparency: 0.5 } },
+  { id: 'medium', name: '适中', patch: { imageOpacity: 0.68, wash: 0.4, transparency: 0.75 } },
+  { id: 'clear', name: '清晰', patch: { imageOpacity: 1, wash: 0.12, transparency: 1 } },
+]
+
 /** 合并用户配置与默认值，并把越界值夹回合法范围。 */
 export function normalizeConfig(raw: unknown): SkinConfig {
   const input = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<SkinConfig>

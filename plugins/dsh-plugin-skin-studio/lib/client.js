@@ -52,6 +52,11 @@ var PRESETS = [
   { id: "rose", name: "\u7EDB\u6885", patch: { accent: "#c98089", bgDark: "#191516", bgLight: "#f7f2f3" } },
   { id: "slate", name: "\u7D20\u77F3", patch: { accent: "#9aa0a6", bgDark: "#161718", bgLight: "#f4f4f5" } }
 ];
+var BACKGROUND_LEVELS = [
+  { id: "soft", name: "\u6DE1\u96C5", patch: { imageOpacity: 0.4, wash: 0.62, transparency: 0.5 } },
+  { id: "medium", name: "\u9002\u4E2D", patch: { imageOpacity: 0.68, wash: 0.4, transparency: 0.75 } },
+  { id: "clear", name: "\u6E05\u6670", patch: { imageOpacity: 1, wash: 0.12, transparency: 1 } }
+];
 function normalizeConfig(raw) {
   const input = typeof raw === "object" && raw !== null ? raw : {};
   const clamp = (value, min, max, fallback) => {
@@ -327,6 +332,7 @@ var CSS = `
 .ss-actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
 .ss-hint { color: var(--dsw-alias-label-caption, inherit); font-size: 11.5px; margin-left: auto; }
 .ss-switch { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.ss-level-label { flex: 0 0 84px; color: var(--dsw-alias-label-secondary, inherit); }
 `;
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -521,6 +527,18 @@ function createSkinPanel(options) {
     input.sync = update;
     return input;
   };
+  const levels = el("div", { class: "ss-presets" });
+  levels.appendChild(el("span", { class: "ss-level-label" }, "\u5F3A\u5EA6"));
+  for (const level of BACKGROUND_LEVELS) {
+    const button = el("button", { class: "ss-preset", type: "button" }, level.name);
+    button.addEventListener("click", () => {
+      config = { ...config, ...level.patch };
+      syncInputs();
+      preview();
+    });
+    levels.appendChild(button);
+  }
+  root.appendChild(levels);
   const percent = (value) => `${String(Math.round(value * 100))}%`;
   const imageOpacity = slider("\u80CC\u666F\u6D53\u5EA6", "imageOpacity", 0, 1, 0.01, percent);
   const imageBlur = slider("\u80CC\u666F\u6A21\u7CCA", "imageBlur", 0, 40, 1, (v) => `${String(Math.round(v))}px`);
@@ -976,7 +994,9 @@ var skin_default = `/*
   --skin-wash: rgba(23, 24, 23, 0.58);
 
   /* \u8868\u9762\u900F\u660E\u5EA6\uFF1A0 = \u5B8C\u5168\u4E0D\u900F\uFF08\u770B\u4E0D\u89C1\u80CC\u666F\u56FE\uFF09\uFF0C1 = \u6700\u900F\u3002
-     \u4E0A\u9650\u523B\u610F\u6536\u7A84\uFF08\u4E3B\u8868\u9762\u6700\u591A\u8BA9\u51FA 30%\uFF09\uFF0C\u518D\u900F\u6587\u5B57\u5C31\u538B\u4E0D\u4F4F\u80CC\u666F\u56FE\u4E86\u3002 */
+     \u5404\u8868\u9762\u6309\u300C\u627F\u8F7D\u6587\u5B57\u7684\u591A\u5C11\u300D\u5206\u914D\u53EF\u8BA9\u51FA\u7684\u5E45\u5EA6\uFF1A\u4FA7\u680F\u548C\u4E3B\u9762\u677F\u8BA9\u5F97\u591A\uFF0C
+     \u8F93\u5165\u6846\u3001\u60AC\u6D6E\u5361\u8FD9\u4E9B\u8D34\u7740\u6587\u5B57\u7684\u8BA9\u5F97\u5C11\u3002\u62C9\u6EE1\u65F6\u80CC\u666F\u56FE\u80FD\u770B\u6E05\uFF0C
+     \u518D\u5F80\u4E0A\u8D70\u6587\u5B57\u5C31\u538B\u4E0D\u4F4F\u56FE\u4E86\uFF0C\u6240\u4EE5\u5E45\u5EA6\u5199\u6B7B\u5728\u8FD9\u91CC\u3001\u4E0D\u518D\u5F00\u653E\u3002 */
   --skin-transparency: 0.8;
 
   /* \u5706\u89D2\u4E0E\u52A8\u6548 */
@@ -1105,13 +1125,13 @@ body[data-ds-dark-theme] {
 body,
 body[data-ds-dark-theme] {
   --dsw-alias-bg-base: transparent;
-  --dsw-alias-bg-layer-1: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 26%), transparent);
-  --dsw-alias-bg-layer-2: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 20%), transparent);
-  --dsw-alias-bg-layer-3: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 12%), transparent);
+  --dsw-alias-bg-layer-1: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 55%), transparent);
+  --dsw-alias-bg-layer-2: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 45%), transparent);
+  --dsw-alias-bg-layer-3: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 32%), transparent);
   --dsw-alias-bg-overlay: color-mix(in srgb, var(--skin-text) 14%, var(--skin-bg));
   --dsw-alias-bg-skeleton: color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg));
   --dsw-alias-bg-multi-select: color-mix(in srgb, var(--skin-accent) 16%, transparent);
-  --dsw-alias-bg-module-platform: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 22%), transparent);
+  --dsw-alias-bg-module-platform: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 50%), transparent);
   --dsw-alias-bg-mask-1: color-mix(in srgb, var(--skin-bg) 72%, transparent);
   --dsw-alias-bg-mask-2: color-mix(in srgb, var(--skin-bg) 58%, transparent);
   --dsw-alias-bg-mask-3: color-mix(in srgb, var(--skin-bg) 40%, transparent);
@@ -1119,12 +1139,12 @@ body[data-ds-dark-theme] {
 
   /* \u7EC4\u4EF6\u7EA7\u53D8\u91CF\uFF1Adsh \u7684\u4FA7\u680F\u3001\u8F93\u5165\u6846\u3001\u6C14\u6CE1\u7B49\u4E0D\u8D70 alias \u5C42\uFF0C\u5355\u72EC\u7ED9\u5B83\u4EEC\u540C\u4E00\u5957\u5904\u7406\u3002
      \u627F\u8F7D\u6587\u5B57\u8D8A\u591A\u7684\u8868\u9762\u8D8A\u5B9E\uFF1A\u4FA7\u680F\u4E0E\u8F93\u5165\u6846\u53EA\u8BA9\u51FA\u4E00\u70B9\uFF0C\u80CC\u666F\u56FE\u624D\u4E0D\u4F1A\u76D6\u8FC7\u5185\u5BB9\u3002 */
-  --dsw-specific-sidebar-fill: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 3%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 42%), transparent);
-  --dsw-specific-input-major: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 8%), transparent);
-  --dsw-specific-login-input: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 10%), transparent);
-  --dsw-specific-selector: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 7%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 10%), transparent);
-  --dsw-specific-tip: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 7%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 12%), transparent);
-  --dsw-hovercard-bg: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 8%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 8%), transparent);
+  --dsw-specific-sidebar-fill: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 3%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 72%), transparent);
+  --dsw-specific-input-major: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 22%), transparent);
+  --dsw-specific-login-input: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 24%), transparent);
+  --dsw-specific-selector: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 7%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 24%), transparent);
+  --dsw-specific-tip: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 7%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 26%), transparent);
+  --dsw-hovercard-bg: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 8%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 20%), transparent);
   /* \u7528\u6237\u6D88\u606F\u6C14\u6CE1\u4E0E\u4FA7\u680F\u9009\u4E2D\u9879\u8D70\u5F3A\u8C03\u8272\uFF0C\u76AE\u80A4\u7684\u4E3B\u8272\u624D\u7ACB\u5F97\u4F4F */
   --dsw-specific-bubble: color-mix(in srgb, var(--skin-accent) 14%, var(--skin-bg));
   --dsw-specific-bubble-highlight: color-mix(in srgb, var(--skin-accent) 26%, var(--skin-bg));
@@ -1217,6 +1237,20 @@ body[data-ds-dark-theme] {
  */
 [class*="sidebarCol"] {
   padding-top: var(--skin-window-controls);
+}
+
+/*
+ * \u4FA7\u680F\u5E95\u8272\u53BB\u91CD\u3002
+ *
+ * dsh \u5728\u4FA7\u680F\u5217\u548C\u5B83\u5185\u90E8\u7684\u5BB9\u5668\u4E0A\u90FD\u586B\u4E86 --dsw-specific-sidebar-fill\uFF0C\u540C\u4E00\u4E2A
+ * \u534A\u900F\u660E\u8272\u53E0\u4E86\u4E24\u5C42\uFF0C\u5B9E\u9645\u4E0D\u900F\u660E\u5EA6\u662F 1-(1-a)\xB2\u2014\u2014a \u53D6 0.58 \u65F6\u662F 0.82\uFF0C\u80CC\u666F\u56FE
+ * \u51E0\u4E4E\u900F\u4E0D\u4E0A\u6765\uFF0C\u8868\u73B0\u4E3A\u4FA7\u680F\u662F\u5757\u6B7B\u677F\u7684\u7EAF\u8272\uFF08\u5B9E\u6D4B\u786E\u8BA4\uFF09\u3002
+ *
+ * \u5728\u5217\u5185\u90E8\u628A\u8FD9\u4E2A\u53D8\u91CF\u6E05\u6389\uFF0C\u53EA\u7531\u6700\u5916\u5C42\u753B\u4E00\u6B21\u3002\u9009\u62E9\u5668\u5339\u914D\u4E0D\u4E0A\u65F6\u9000\u56DE\u539F\u6765\u7684
+ * \u4E24\u5C42\u53E0\u52A0\uFF0C\u53EA\u662F\u504F\u5B9E\u4E00\u70B9\uFF0C\u754C\u9762\u4E0D\u4F1A\u574F\u3002
+ */
+[class*="sidebarCol"] > * {
+  --dsw-specific-sidebar-fill: transparent;
 }
 
 /* \u2500\u2500 \u89C2\u611F\u7EC6\u8282 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */

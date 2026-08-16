@@ -5,7 +5,7 @@
  * 也方便脱离 dsh 单独调试。改动即时预览，用户看到的就是最终效果。
  */
 
-import { DEFAULT_CONFIG, PRESETS, type SkinConfig } from './config'
+import { BACKGROUND_LEVELS, DEFAULT_CONFIG, PRESETS, type SkinConfig } from './config'
 import { imageToDataUri } from './runtime'
 import { getVideo, putVideo, pruneVideos } from './video-store'
 
@@ -59,6 +59,7 @@ const CSS = `
 .ss-actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
 .ss-hint { color: var(--dsw-alias-label-caption, inherit); font-size: 11.5px; margin-left: auto; }
 .ss-switch { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.ss-level-label { flex: 0 0 84px; color: var(--dsw-alias-label-secondary, inherit); }
 `
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -245,6 +246,20 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
     ;(input as HTMLInputElement & { sync?: () => void }).sync = update
     return input
   }
+
+  // 三个滑块合起来才决定「背景看得清不清楚」，先给一键档位，再让人微调
+  const levels = el('div', { class: 'ss-presets' })
+  levels.appendChild(el('span', { class: 'ss-level-label' }, '强度'))
+  for (const level of BACKGROUND_LEVELS) {
+    const button = el('button', { class: 'ss-preset', type: 'button' }, level.name)
+    button.addEventListener('click', () => {
+      config = { ...config, ...level.patch }
+      syncInputs()
+      preview()
+    })
+    levels.appendChild(button)
+  }
+  root.appendChild(levels)
 
   const percent = (value: number): string => `${String(Math.round(value * 100))}%`
   const imageOpacity = slider('背景浓度', 'imageOpacity', 0, 1, 0.01, percent)

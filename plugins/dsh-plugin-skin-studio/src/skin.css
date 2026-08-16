@@ -49,7 +49,9 @@
   --skin-wash: rgba(23, 24, 23, 0.58);
 
   /* 表面透明度：0 = 完全不透（看不见背景图），1 = 最透。
-     上限刻意收窄（主表面最多让出 30%），再透文字就压不住背景图了。 */
+     各表面按「承载文字的多少」分配可让出的幅度：侧栏和主面板让得多，
+     输入框、悬浮卡这些贴着文字的让得少。拉满时背景图能看清，
+     再往上走文字就压不住图了，所以幅度写死在这里、不再开放。 */
   --skin-transparency: 0.8;
 
   /* 圆角与动效 */
@@ -178,13 +180,13 @@ body[data-ds-dark-theme] {
 body,
 body[data-ds-dark-theme] {
   --dsw-alias-bg-base: transparent;
-  --dsw-alias-bg-layer-1: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 26%), transparent);
-  --dsw-alias-bg-layer-2: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 20%), transparent);
-  --dsw-alias-bg-layer-3: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 12%), transparent);
+  --dsw-alias-bg-layer-1: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 55%), transparent);
+  --dsw-alias-bg-layer-2: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 45%), transparent);
+  --dsw-alias-bg-layer-3: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 32%), transparent);
   --dsw-alias-bg-overlay: color-mix(in srgb, var(--skin-text) 14%, var(--skin-bg));
   --dsw-alias-bg-skeleton: color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg));
   --dsw-alias-bg-multi-select: color-mix(in srgb, var(--skin-accent) 16%, transparent);
-  --dsw-alias-bg-module-platform: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 22%), transparent);
+  --dsw-alias-bg-module-platform: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 50%), transparent);
   --dsw-alias-bg-mask-1: color-mix(in srgb, var(--skin-bg) 72%, transparent);
   --dsw-alias-bg-mask-2: color-mix(in srgb, var(--skin-bg) 58%, transparent);
   --dsw-alias-bg-mask-3: color-mix(in srgb, var(--skin-bg) 40%, transparent);
@@ -192,12 +194,12 @@ body[data-ds-dark-theme] {
 
   /* 组件级变量：dsh 的侧栏、输入框、气泡等不走 alias 层，单独给它们同一套处理。
      承载文字越多的表面越实：侧栏与输入框只让出一点，背景图才不会盖过内容。 */
-  --dsw-specific-sidebar-fill: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 3%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 42%), transparent);
-  --dsw-specific-input-major: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 8%), transparent);
-  --dsw-specific-login-input: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 10%), transparent);
-  --dsw-specific-selector: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 7%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 10%), transparent);
-  --dsw-specific-tip: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 7%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 12%), transparent);
-  --dsw-hovercard-bg: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 8%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 8%), transparent);
+  --dsw-specific-sidebar-fill: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 3%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 72%), transparent);
+  --dsw-specific-input-major: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 6%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 22%), transparent);
+  --dsw-specific-login-input: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 24%), transparent);
+  --dsw-specific-selector: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 7%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 24%), transparent);
+  --dsw-specific-tip: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 7%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 26%), transparent);
+  --dsw-hovercard-bg: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 8%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 20%), transparent);
   /* 用户消息气泡与侧栏选中项走强调色，皮肤的主色才立得住 */
   --dsw-specific-bubble: color-mix(in srgb, var(--skin-accent) 14%, var(--skin-bg));
   --dsw-specific-bubble-highlight: color-mix(in srgb, var(--skin-accent) 26%, var(--skin-bg));
@@ -290,6 +292,20 @@ body[data-ds-dark-theme] {
  */
 [class*="sidebarCol"] {
   padding-top: var(--skin-window-controls);
+}
+
+/*
+ * 侧栏底色去重。
+ *
+ * dsh 在侧栏列和它内部的容器上都填了 --dsw-specific-sidebar-fill，同一个
+ * 半透明色叠了两层，实际不透明度是 1-(1-a)²——a 取 0.58 时是 0.82，背景图
+ * 几乎透不上来，表现为侧栏是块死板的纯色（实测确认）。
+ *
+ * 在列内部把这个变量清掉，只由最外层画一次。选择器匹配不上时退回原来的
+ * 两层叠加，只是偏实一点，界面不会坏。
+ */
+[class*="sidebarCol"] > * {
+  --dsw-specific-sidebar-fill: transparent;
 }
 
 /* ── 观感细节 ───────────────────────────────────────────────────── */
