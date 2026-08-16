@@ -103,8 +103,13 @@ function normalizeConfig(raw) {
     imageBlur: clamp(input.imageBlur, 0, 40, DEFAULT_CONFIG.imageBlur),
     transparency: clamp(input.transparency, 0, 1, DEFAULT_CONFIG.transparency),
     wash: clamp(input.wash, 0, 1, DEFAULT_CONFIG.wash),
-    // 这个值会被写进 CSS 变量，限定字符集挡掉借它注入样式的可能
-    fontFamily: typeof input.fontFamily === "string" && /^[\w\s"',\-]{0,160}$/.test(input.fontFamily) ? input.fontFamily.trim() : "",
+    /*
+     * 这个值会被写进 CSS 变量，所以要挡住能借它改写样式的字符：分号、花括号、
+     * 尖括号、反斜杠，以及括号（否则可以写出 url(...) 之类的函数）。
+     * 只能用黑名单不能用白名单——本机字体名什么字符都有，中文名（如
+     * 「LeeFont蒙黑体」）就会被 \w 这类白名单直接挡掉。
+     */
+    fontFamily: typeof input.fontFamily === "string" && !/[;{}()<>\\]/.test(input.fontFamily) ? input.fontFamily.trim().slice(0, 200) : "",
     textContrast: clamp(input.textContrast, 0, 1, DEFAULT_CONFIG.textContrast),
     textStroke: clamp(input.textStroke, 0, 1, DEFAULT_CONFIG.textStroke)
   };
@@ -485,21 +490,43 @@ function createSkinPanel(options) {
   ));
   root.appendChild(el("h3", {}, "\u6587\u5B57"));
   const font = el("select", {});
+  const picked = el("optgroup", { label: "\u63A8\u8350" });
   for (const option of FONTS) {
     if (option.stack !== "" && !fontInstalled(option.stack)) continue;
     const node = el("option", { value: option.stack }, option.name);
     node.style.fontFamily = option.stack === "" ? "inherit" : option.stack;
-    font.append(node);
+    picked.append(node);
   }
+  font.append(picked);
   font.addEventListener("change", () => {
     set("fontFamily", font.value);
   });
+  const fontHint = el("span", { class: "ss-hint" }, "");
   root.appendChild(el(
     "div",
     { class: "ss-row" },
     el("label", {}, "\u5B57\u4F53"),
-    el("div", { class: "ss-ctl" }, font)
+    el("div", { class: "ss-ctl" }, font, fontHint)
   ));
+  const loadLocalFonts = async () => {
+    const query = globalThis.queryLocalFonts;
+    if (query === void 0) return;
+    const families = [...new Set((await query()).map((item) => item.family))].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+    if (families.length === 0) return;
+    const all = el("optgroup", { label: `\u672C\u673A\u5B57\u4F53\uFF08${String(families.length)}\uFF09` });
+    for (const family of families) {
+      const stack = `"${family}", sans-serif`;
+      const node = el("option", { value: stack }, family);
+      node.style.fontFamily = stack;
+      all.append(node);
+    }
+    font.append(all);
+    fontHint.textContent = `\u5171 ${String(families.length)} \u79CD`;
+    font.value = config.fontFamily;
+  };
+  void loadLocalFonts().catch(() => {
+    fontHint.textContent = "\u8BFB\u4E0D\u5230\u672C\u673A\u5B57\u4F53\uFF0C\u4EC5\u663E\u793A\u63A8\u8350\u9879";
+  });
   const textRows = el("div", {});
   root.appendChild(textRows);
   root.appendChild(el("h3", {}, "\u914D\u8272\u9884\u8BBE"));

@@ -164,9 +164,14 @@ export function normalizeConfig(raw: unknown): SkinConfig {
     imageBlur: clamp(input.imageBlur, 0, 40, DEFAULT_CONFIG.imageBlur),
     transparency: clamp(input.transparency, 0, 1, DEFAULT_CONFIG.transparency),
     wash: clamp(input.wash, 0, 1, DEFAULT_CONFIG.wash),
-    // 这个值会被写进 CSS 变量，限定字符集挡掉借它注入样式的可能
-    fontFamily: typeof input.fontFamily === 'string' && /^[\w\s"',\-]{0,160}$/.test(input.fontFamily)
-      ? input.fontFamily.trim()
+    /*
+     * 这个值会被写进 CSS 变量，所以要挡住能借它改写样式的字符：分号、花括号、
+     * 尖括号、反斜杠，以及括号（否则可以写出 url(...) 之类的函数）。
+     * 只能用黑名单不能用白名单——本机字体名什么字符都有，中文名（如
+     * 「LeeFont蒙黑体」）就会被 \w 这类白名单直接挡掉。
+     */
+    fontFamily: typeof input.fontFamily === 'string' && !/[;{}()<>\\]/.test(input.fontFamily)
+      ? input.fontFamily.trim().slice(0, 200)
       : '',
     textContrast: clamp(input.textContrast, 0, 1, DEFAULT_CONFIG.textContrast),
     textStroke: clamp(input.textStroke, 0, 1, DEFAULT_CONFIG.textStroke),

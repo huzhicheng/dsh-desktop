@@ -134,16 +134,49 @@ export function createSkinPanel(options: PanelOptions): HTMLElement {
   // 文字
   root.appendChild(el('h3', {}, '文字'))
   const font = el('select', {}) as HTMLSelectElement
+  const picked = el('optgroup', { label: '推荐' })
   // 没装的字体不列出来：选了没反应只会让人以为功能坏了
   for (const option of FONTS) {
     if (option.stack !== '' && !fontInstalled(option.stack)) continue
     const node = el('option', { value: option.stack }, option.name)
     node.style.fontFamily = option.stack === '' ? 'inherit' : option.stack
-    font.append(node)
+    picked.append(node)
   }
+  font.append(picked)
   font.addEventListener('change', () => { set('fontFamily', font.value) })
+  const fontHint = el('span', { class: 'ss-hint' }, '')
   root.appendChild(el('div', { class: 'ss-row' }, el('label', {}, '字体'),
-    el('div', { class: 'ss-ctl' }, font)))
+    el('div', { class: 'ss-ctl' }, font, fontHint)))
+
+  /*
+   * 再把本机装的字体全列出来。
+   *
+   * queryLocalFonts() 属于 local-fonts 权限，只在安全上下文可用；桌面壳里
+   * 已为 Harness 的来源放行，纯浏览器下拿不到就只留上面那份推荐清单——
+   * 所以这里失败不报错，降级即可。
+   */
+  const loadLocalFonts = async (): Promise<void> => {
+    const query = (globalThis as { queryLocalFonts?: () => Promise<{ family: string }[]> }).queryLocalFonts
+    if (query === undefined) return
+    const families = [...new Set((await query()).map(item => item.family))]
+      .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+    if (families.length === 0) return
+    const all = el('optgroup', { label: `本机字体（${String(families.length)}）` })
+    for (const family of families) {
+      // 字体名里可能有空格，必须带引号；末尾补一个通用族做兜底
+      const stack = `"${family}", sans-serif`
+      const node = el('option', { value: stack }, family)
+      node.style.fontFamily = stack   // 每一项用它自己的字体显示，选之前就能看到样子
+      all.append(node)
+    }
+    font.append(all)
+    fontHint.textContent = `共 ${String(families.length)} 种`
+    // 之前存的值可能就在这批里，补完再回填一次才选得中
+    font.value = config.fontFamily
+  }
+  void loadLocalFonts().catch(() => {
+    fontHint.textContent = '读不到本机字体，仅显示推荐项'
+  })
   const textRows = el('div', {})
   root.appendChild(textRows)
 
