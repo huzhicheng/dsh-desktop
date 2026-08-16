@@ -1501,14 +1501,29 @@ html.skin-studio ::selection {
    \u5B57\u4F53\u53EA\u8986\u76D6 body\uFF1Adsh \u5404\u5904\u7684\u5B57\u4F53\u90FD\u662F\u4ECE\u8FD9\u91CC\u7EE7\u627F\u4E0B\u6765\u7684\uFF08\u5B9E\u6D4B\u4FA7\u680F\u3001\u6309\u94AE
    \u53D6\u5230\u7684 font-family \u4E0E body \u5B8C\u5168\u4E00\u81F4\uFF09\uFF0C\u4E0D\u5FC5\u7ED9\u6BCF\u4E2A\u7EC4\u4EF6\u52A0 !important\u3002
    \u4EE3\u7801\u5757\u9664\u5916\u2014\u2014\u5B83\u8BE5\u4FDD\u6301\u7B49\u5BBD\u3002 */
-html.skin-studio[data-skin-font] body {
+html.skin-studio[data-skin-font] body,
+/*
+ * Markdown \u5BB9\u5668\u8981\u5355\u72EC\u518D\u5199\u4E00\u6B21\u3002
+ *
+ * dsh \u7684\u6D88\u606F\u6B63\u6587\u5916\u9762\u90A3\u5C42\uFF08\u7C7B\u540D\u5E26 markdown \u7684 CSS Module\uFF09\u81EA\u5DF1\u58F0\u660E\u4E86
+ * font-family\uFF0C\u7EE7\u627F\u94FE\u5230\u8FD9\u91CC\u5C31\u88AB\u622A\u65AD\u2014\u2014\u8868\u73B0\u4E3A\u754C\u9762\u5176\u4F59\u90E8\u5206\u90FD\u6362\u4E86\u5B57\u4F53\uFF0C
+ * \u552F\u72EC\u5BF9\u8BDD\u5185\u5BB9\u6CA1\u53D8\u3002\u5B9E\u6D4B\u7956\u5148\u94FE\u4E0A\u5230 Sxvs8a_body \u8FD8\u662F\u65B0\u5B57\u4F53\uFF0C
+ * \u8FDB\u4E86 _markdown_xxx \u5C31\u53D8\u56DE -apple-system\u3002
+ * \u5339\u914D\u4E0D\u4E0A\u65F6\u9000\u56DE\u539F\u6837\uFF0C\u4E0D\u4F1A\u628A\u754C\u9762\u5F04\u574F\u3002
+ */
+html.skin-studio[data-skin-font] [class*="markdown"] {
   font-family: var(--skin-font);
 }
 
+/* \u4EE3\u7801\u4FDD\u6301\u7B49\u5BBD\u3002\u9009\u62E9\u5668\u8981\u76D6\u8FC7\u4E0A\u9762\u90A3\u6761 markdown \u89C4\u5219\uFF0C\u6240\u4EE5\u4E24\u79CD\u4E0A\u4E0B\u6587\u90FD\u5217\u51FA */
 html.skin-studio[data-skin-font] code,
 html.skin-studio[data-skin-font] pre,
 html.skin-studio[data-skin-font] kbd,
-html.skin-studio[data-skin-font] samp {
+html.skin-studio[data-skin-font] samp,
+html.skin-studio[data-skin-font] [class*="markdown"] code,
+html.skin-studio[data-skin-font] [class*="markdown"] pre,
+html.skin-studio[data-skin-font] [class*="markdown"] kbd,
+html.skin-studio[data-skin-font] [class*="markdown"] samp {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 

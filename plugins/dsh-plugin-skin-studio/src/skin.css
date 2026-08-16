@@ -363,14 +363,29 @@ html.skin-studio ::selection {
    字体只覆盖 body：dsh 各处的字体都是从这里继承下来的（实测侧栏、按钮
    取到的 font-family 与 body 完全一致），不必给每个组件加 !important。
    代码块除外——它该保持等宽。 */
-html.skin-studio[data-skin-font] body {
+html.skin-studio[data-skin-font] body,
+/*
+ * Markdown 容器要单独再写一次。
+ *
+ * dsh 的消息正文外面那层（类名带 markdown 的 CSS Module）自己声明了
+ * font-family，继承链到这里就被截断——表现为界面其余部分都换了字体，
+ * 唯独对话内容没变。实测祖先链上到 Sxvs8a_body 还是新字体，
+ * 进了 _markdown_xxx 就变回 -apple-system。
+ * 匹配不上时退回原样，不会把界面弄坏。
+ */
+html.skin-studio[data-skin-font] [class*="markdown"] {
   font-family: var(--skin-font);
 }
 
+/* 代码保持等宽。选择器要盖过上面那条 markdown 规则，所以两种上下文都列出 */
 html.skin-studio[data-skin-font] code,
 html.skin-studio[data-skin-font] pre,
 html.skin-studio[data-skin-font] kbd,
-html.skin-studio[data-skin-font] samp {
+html.skin-studio[data-skin-font] samp,
+html.skin-studio[data-skin-font] [class*="markdown"] code,
+html.skin-studio[data-skin-font] [class*="markdown"] pre,
+html.skin-studio[data-skin-font] [class*="markdown"] kbd,
+html.skin-studio[data-skin-font] [class*="markdown"] samp {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
