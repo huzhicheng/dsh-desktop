@@ -40,7 +40,7 @@ var DEFAULT_CONFIG = {
   image: "",
   videoId: "",
   videoName: "",
-  imageFit: "cover",
+  imageFit: "contain",
   imageOpacity: 0.5,
   imageBlur: 0,
   transparency: 0.8,
@@ -58,10 +58,10 @@ var BACKGROUND_LEVELS = [
   { id: "medium", name: "\u9002\u4E2D", patch: { imageOpacity: 0.68, wash: 0.4, transparency: 0.75 } },
   { id: "clear", name: "\u6E05\u6670", patch: { imageOpacity: 1, wash: 0.12, transparency: 1 } }
 ];
-var FITS = ["cover", "contain", "tile", "stretch"];
+var FITS = ["contain", "cover", "tile", "stretch"];
 var FIT_LABELS = {
-  cover: "\u586B\u6EE1\u7A97\u53E3\uFF08\u53EF\u80FD\u88C1\u8FB9\uFF09",
-  contain: "\u5B8C\u6574\u663E\u793A\uFF08\u56DB\u5468\u7559\u8FB9\uFF09",
+  contain: "\u81EA\u9002\u5E94\uFF08\u5B8C\u6574\u663E\u793A\uFF0C\u9ED8\u8BA4\uFF09",
+  cover: "\u586B\u6EE1\u7A97\u53E3\uFF08\u4F1A\u88C1\u6389\u8FB9\u7F18\uFF09",
   tile: "\u5E73\u94FA",
   stretch: "\u62C9\u4F38\u94FA\u6EE1\uFF08\u4F1A\u53D8\u5F62\uFF09"
 };
@@ -205,6 +205,23 @@ function createSkinRuntime(css) {
   };
   const videoElement = () => document.getElementById(VIDEO_ID);
   const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const captureBackdrop = (video) => {
+    if (video.videoWidth === 0) return;
+    try {
+      const canvas = document.createElement("canvas");
+      const scale = 240 / Math.max(video.videoWidth, video.videoHeight);
+      canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+      canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+      const context = canvas.getContext("2d");
+      if (context === null) return;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      document.documentElement.style.setProperty(
+        "--skin-backdrop-image",
+        `url("${canvas.toDataURL("image/jpeg", 0.6)}")`
+      );
+    } catch {
+    }
+  };
   const syncVideo = (config) => {
     const video = videoElement();
     if (video === null) return;
@@ -221,6 +238,10 @@ function createSkinRuntime(css) {
       if (blob === void 0 || loadedVideoId !== config.videoId) return;
       releaseUrl();
       objectUrl = URL.createObjectURL(blob);
+      document.documentElement.style.setProperty("--skin-backdrop-image", "none");
+      video.addEventListener("loadeddata", () => {
+        captureBackdrop(video);
+      }, { once: true });
       video.src = objectUrl;
       if (reduceMotion()) return;
       void video.play().catch(() => {
@@ -253,7 +274,14 @@ function createSkinRuntime(css) {
     style.setProperty("--skin-image-blur", `${String(current.imageBlur)}px`);
     style.setProperty("--skin-transparency", String(current.transparency));
     style.setProperty("--skin-wash", washColor(current, dark));
-    style.setProperty("--skin-backdrop-opacity", current.image === "" ? "0" : "0.18");
+    const hasBackdrop = current.image !== "" || current.videoId !== "";
+    style.setProperty(
+      "--skin-backdrop-opacity",
+      hasBackdrop ? current.imageFit === "contain" ? "0.55" : "0.18" : "0"
+    );
+    if (current.videoId === "") {
+      style.setProperty("--skin-backdrop-image", current.image === "" ? "none" : `url("${current.image}")`);
+    }
     root.dataset.skinBg = current.videoId !== "" ? "video" : current.image === "" ? "none" : "image";
     syncVideo(current);
   };
@@ -297,7 +325,8 @@ function createSkinRuntime(css) {
         "--skin-backdrop-opacity",
         "--skin-image-size",
         "--skin-image-repeat",
-        "--skin-video-fit"
+        "--skin-video-fit",
+        "--skin-backdrop-image"
       ]) {
         root.style.removeProperty(name);
       }
@@ -1018,6 +1047,7 @@ var skin_default = `/*
   --skin-position-x: 50%;
   --skin-position-y: 50%;
   /* \u4E3B\u56FE\u4E0B\u9762\u518D\u57AB\u4E00\u5C42\u653E\u5927\u6A21\u7CCA\u7684\u540C\u56FE\uFF0C\u8FB9\u7F18\u4E0D\u4F1A\u9732\u51FA\u786C\u8FB9 */
+  --skin-backdrop-image: none;
   --skin-backdrop-opacity: 0.18;
   --skin-backdrop-blur: 24px;
 
@@ -1082,9 +1112,12 @@ html.skin-studio body {
 #skin-studio-art > .skin-canvas {
   position: absolute;
   pointer-events: none;
-  background-image: var(--skin-image);
   background-position: var(--skin-position-x) var(--skin-position-y);
 }
+
+#skin-studio-art > .skin-canvas { background-image: var(--skin-image); }
+/* \u57AB\u5E95\u5C42\u5355\u72EC\u53D6\u56FE\uFF1A\u89C6\u9891\u6A21\u5F0F\u4E0B\u8FD9\u91CC\u662F\u4ECE\u89C6\u9891\u6293\u4E0B\u6765\u7684\u4E00\u5E27 */
+#skin-studio-art > .skin-backdrop { background-image: var(--skin-backdrop-image); }
 
 /* \u57AB\u5E95\u7684\u653E\u5927\u6A21\u7CCA\u5C42\uFF1A\u5411\u5916\u6EA2\u51FA 5% \u5E76\u8F7B\u5FAE\u653E\u5927\uFF0C\u56DB\u5468\u4E0D\u4F1A\u51FA\u73B0\u786C\u8FB9 */
 #skin-studio-art > .skin-backdrop {
@@ -1114,14 +1147,17 @@ html.skin-studio body {
  * \u89C6\u9891\u5C42\uFF1A\u4F4D\u7F6E\u4E0E .skin-canvas \u5B8C\u5168\u4E00\u81F4\uFF0C\u6D53\u5EA6\u3001\u6A21\u7CCA\u3001\u7F29\u653E\u5171\u7528\u540C\u4E00\u7EC4\u53D8\u91CF\uFF0C
  * \u6240\u4EE5\u56FE\u6362\u6210\u89C6\u9891\u540E\u89C2\u611F\u662F\u8FDE\u7EED\u7684\u3002
  *
- * \u4E0D\u8BBE width/height\uFF1A\u56DB\u8FB9\u90FD\u5B9A\u4E86\u4F4D\uFF0C\u76D2\u5B50\u5C3A\u5BF8\u7531\u5B9A\u4F4D\u51B3\u5B9A\uFF0Cobject-fit: cover
- * \u8D1F\u8D23\u628A\u753B\u9762\u88C1\u5230\u94FA\u6EE1\u2014\u2014\u5199\u6B7B width:100% \u53CD\u800C\u4F1A\u7834\u574F\u8FD9\u4E2A\u5173\u7CFB\u3002
- * \u89C6\u9891\u5929\u7136\u94FA\u6EE1\uFF0C\u4E5F\u5C31\u4E0D\u9700\u8981 .skin-backdrop \u90A3\u5C42\u9632\u786C\u8FB9\u7684\u57AB\u5E95\u6A21\u7CCA\u3002
+ * \u5FC5\u987B\u663E\u5F0F\u7ED9 width/height\u3002<video> \u662F\u66FF\u6362\u5143\u7D20\uFF0C\u540C\u65F6\u5199 left \u4E0E right \u5E76\u4E0D\u4F1A
+ * \u628A\u5B83\u62C9\u4F38\u5230\u90A3\u4E2A\u8303\u56F4\u2014\u2014\u6309 CSS \u7684\u8FC7\u7EA6\u675F\u89C4\u5219\uFF0C\u5B83\u4ECD\u4FDD\u6301\u89C6\u9891\u81EA\u8EAB\u7684\u56FA\u6709\u5C3A\u5BF8\uFF0C
+ * \u591A\u51FA\u6765\u7684\u7A7A\u95F4\u7B97\u8FDB margin\u3002\u53EA\u9760 inset: 0 \u7684\u8BDD\uFF0C1280\xD7720 \u7684\u6A2A\u7248\u89C6\u9891\u56E0\u4E3A\u6BD4
+ * \u7A97\u53E3\u5927\u3001\u6EA2\u51FA\u540E\u770B\u7740\u50CF\u94FA\u6EE1\u4E86\uFF0C480\xD7854 \u7684\u7AD6\u7248\u5C31\u4F1A\u7F29\u5728\u5DE6\u4E0A\u89D2\uFF08\u5B9E\u6D4B\uFF09\u3002
  */
 #skin-studio-art > .skin-video {
   position: absolute;
-  inset: 0;
+  top: 0;
   left: calc(-1 * var(--skin-inset-left));
+  width: calc(100% + var(--skin-inset-left));
+  height: 100%;
   z-index: 1;
   display: none;
   object-fit: var(--skin-video-fit);
@@ -1132,7 +1168,7 @@ html.skin-studio body {
 }
 
 html[data-skin-bg='video'] #skin-studio-art > .skin-video { display: block; }
-html[data-skin-bg='video'] #skin-studio-art > .skin-backdrop,
+/* \u89C6\u9891\u6A21\u5F0F\u53EA\u85CF\u9759\u6001\u4E3B\u753B\u5E03\uFF1B\u57AB\u5E95\u5C42\u7559\u7740\u2014\u2014\u300C\u5B8C\u6574\u663E\u793A\u300D\u65F6\u56DB\u5468\u7684\u7559\u767D\u9760\u5B83\u586B */
 html[data-skin-bg='video'] #skin-studio-art > .skin-canvas { display: none; }
 
 /* \u8499\u7248\u76D6\u5728\u56FE\u4E4B\u4E0A\uFF0C\u754C\u9762\u4E4B\u4E0B */

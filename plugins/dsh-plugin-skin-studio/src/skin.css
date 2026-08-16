@@ -36,6 +36,7 @@
   --skin-position-x: 50%;
   --skin-position-y: 50%;
   /* 主图下面再垫一层放大模糊的同图，边缘不会露出硬边 */
+  --skin-backdrop-image: none;
   --skin-backdrop-opacity: 0.18;
   --skin-backdrop-blur: 24px;
 
@@ -100,9 +101,12 @@ html.skin-studio body {
 #skin-studio-art > .skin-canvas {
   position: absolute;
   pointer-events: none;
-  background-image: var(--skin-image);
   background-position: var(--skin-position-x) var(--skin-position-y);
 }
+
+#skin-studio-art > .skin-canvas { background-image: var(--skin-image); }
+/* 垫底层单独取图：视频模式下这里是从视频抓下来的一帧 */
+#skin-studio-art > .skin-backdrop { background-image: var(--skin-backdrop-image); }
 
 /* 垫底的放大模糊层：向外溢出 5% 并轻微放大，四周不会出现硬边 */
 #skin-studio-art > .skin-backdrop {
@@ -132,14 +136,17 @@ html.skin-studio body {
  * 视频层：位置与 .skin-canvas 完全一致，浓度、模糊、缩放共用同一组变量，
  * 所以图换成视频后观感是连续的。
  *
- * 不设 width/height：四边都定了位，盒子尺寸由定位决定，object-fit: cover
- * 负责把画面裁到铺满——写死 width:100% 反而会破坏这个关系。
- * 视频天然铺满，也就不需要 .skin-backdrop 那层防硬边的垫底模糊。
+ * 必须显式给 width/height。<video> 是替换元素，同时写 left 与 right 并不会
+ * 把它拉伸到那个范围——按 CSS 的过约束规则，它仍保持视频自身的固有尺寸，
+ * 多出来的空间算进 margin。只靠 inset: 0 的话，1280×720 的横版视频因为比
+ * 窗口大、溢出后看着像铺满了，480×854 的竖版就会缩在左上角（实测）。
  */
 #skin-studio-art > .skin-video {
   position: absolute;
-  inset: 0;
+  top: 0;
   left: calc(-1 * var(--skin-inset-left));
+  width: calc(100% + var(--skin-inset-left));
+  height: 100%;
   z-index: 1;
   display: none;
   object-fit: var(--skin-video-fit);
@@ -150,7 +157,7 @@ html.skin-studio body {
 }
 
 html[data-skin-bg='video'] #skin-studio-art > .skin-video { display: block; }
-html[data-skin-bg='video'] #skin-studio-art > .skin-backdrop,
+/* 视频模式只藏静态主画布；垫底层留着——「完整显示」时四周的留白靠它填 */
 html[data-skin-bg='video'] #skin-studio-art > .skin-canvas { display: none; }
 
 /* 蒙版盖在图之上，界面之下 */

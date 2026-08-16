@@ -124,6 +124,32 @@ export function createSkinRuntime(css: string): SkinRuntime {
   const reduceMotion = (): boolean =>
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
+  /**
+   * 抓视频的一帧当垫底层。
+   *
+   * 「完整显示」时视频四周会留白，用第二个 <video> 去铺会把同一段视频解码两遍，
+   * 为一块模糊的底纹付这个代价不值得。抓一帧静态图足够了——反正要重度模糊。
+   * blob URL 与页面同源，画进 canvas 不会污染。
+   */
+  const captureBackdrop = (video: HTMLVideoElement): void => {
+    if (video.videoWidth === 0) return
+    try {
+      const canvas = document.createElement('canvas')
+      // 这层要糊到看不出细节，缩到 240 像素完全够用，还省下一大截 data URI
+      const scale = 240 / Math.max(video.videoWidth, video.videoHeight)
+      canvas.width = Math.max(1, Math.round(video.videoWidth * scale))
+      canvas.height = Math.max(1, Math.round(video.videoHeight * scale))
+      const context = canvas.getContext('2d')
+      if (context === null) return
+      context.drawImage(video, 0, 0, canvas.width, canvas.height)
+      document.documentElement.style.setProperty(
+        '--skin-backdrop-image', `url("${canvas.toDataURL('image/jpeg', 0.6)}")`,
+      )
+    } catch {
+      // 抓不到就退回纯色底，不值得为此中断
+    }
+  }
+
   const syncVideo = (config: SkinConfig): void => {
     const video = videoElement()
     if (video === null) return
@@ -144,6 +170,9 @@ export function createSkinRuntime(css: string): SkinRuntime {
       if (blob === undefined || loadedVideoId !== config.videoId) return
       releaseUrl()
       objectUrl = URL.createObjectURL(blob)
+      // 换片期间先清掉旧的一帧，免得新视频配着上一段的底纹
+      document.documentElement.style.setProperty('--skin-backdrop-image', 'none')
+      video.addEventListener('loadeddata', () => { captureBackdrop(video) }, { once: true })
       video.src = objectUrl
       if (reduceMotion()) return
       void video.play().catch(() => {
@@ -180,8 +209,18 @@ export function createSkinRuntime(css: string): SkinRuntime {
     style.setProperty('--skin-image-blur', `${String(current.imageBlur)}px`)
     style.setProperty('--skin-transparency', String(current.transparency))
     style.setProperty('--skin-wash', washColor(current, dark))
-    // 没有背景图时不需要垫底的模糊层，省一次合成
-    style.setProperty('--skin-backdrop-opacity', current.image === '' ? '0' : '0.18')
+    // 垫底的放大模糊层：
+    // 「完整显示」时四周会留白，这层得够明显才不会露出一片空底；
+    // 「填满窗口」时它只在边缘露一点，浅浅垫着即可；没有背景就整层关掉，省一次合成。
+    const hasBackdrop = current.image !== '' || current.videoId !== ''
+    style.setProperty(
+      '--skin-backdrop-opacity',
+      hasBackdrop ? (current.imageFit === 'contain' ? '0.55' : '0.18') : '0',
+    )
+    // 图片模式下垫底层就用同一张图；视频模式下由 captureBackdrop 填一帧进来
+    if (current.videoId === '') {
+      style.setProperty('--skin-backdrop-image', current.image === '' ? 'none' : `url("${current.image}")`)
+    }
     // 图层用哪一套由它决定：视频优先于图片，样式表据此二选一显示
     root.dataset.skinBg = current.videoId !== '' ? 'video' : (current.image === '' ? 'none' : 'image')
     syncVideo(current)
@@ -222,7 +261,7 @@ export function createSkinRuntime(css: string): SkinRuntime {
       for (const name of [
         '--skin-accent', '--skin-bg', '--skin-image', '--skin-image-opacity',
         '--skin-image-blur', '--skin-transparency', '--skin-wash', '--skin-backdrop-opacity',
-        '--skin-image-size', '--skin-image-repeat', '--skin-video-fit',
+        '--skin-image-size', '--skin-image-repeat', '--skin-video-fit', '--skin-backdrop-image',
       ]) {
         root.style.removeProperty(name)
       }

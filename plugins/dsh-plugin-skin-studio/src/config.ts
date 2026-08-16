@@ -22,9 +22,10 @@ export interface SkinConfig {
   /**
    * 背景适配方式。
    *
-   * cover 填满窗口、会裁掉伸出去的部分（竖图在宽窗口里只剩一条横切片）；
-   * contain 完整显示、四周留边（留白处由那层放大模糊的同图垫底）；
-   * tile 原尺寸平铺，适合纹理小图；stretch 硬拉到窗口大小，会变形。
+   * 默认 contain：整张图/整段视频都看得见，长宽比对不上时四周留白，
+   * 留白处由那层放大模糊的同图（视频则是它的一帧）垫底，不会露出空底。
+   * cover 填满窗口但会裁掉伸出去的部分——竖图放进宽窗口只剩一条横切片，
+   * 所以不适合当默认；tile 原尺寸平铺，适合纹理小图；stretch 硬拉，会变形。
    */
   imageFit: 'cover' | 'contain' | 'tile' | 'stretch'
   /** 背景（图或视频）不透明度 0~1。 */
@@ -48,7 +49,7 @@ export const DEFAULT_CONFIG: SkinConfig = {
   image: '',
   videoId: '',
   videoName: '',
-  imageFit: 'cover',
+  imageFit: 'contain',
   imageOpacity: 0.5,
   imageBlur: 0,
   transparency: 0.8,
@@ -84,12 +85,12 @@ export const BACKGROUND_LEVELS: readonly SkinPreset[] = [
 ]
 
 /** 适配方式的合法取值，兼作界面上的选项来源。 */
-export const FITS: readonly SkinConfig['imageFit'][] = ['cover', 'contain', 'tile', 'stretch']
+export const FITS: readonly SkinConfig['imageFit'][] = ['contain', 'cover', 'tile', 'stretch']
 
 /** 适配方式的中文名，界面直接用。 */
 export const FIT_LABELS: Record<SkinConfig['imageFit'], string> = {
-  cover: '填满窗口（可能裁边）',
-  contain: '完整显示（四周留边）',
+  contain: '自适应（完整显示，默认）',
+  cover: '填满窗口（会裁掉边缘）',
   tile: '平铺',
   stretch: '拉伸铺满（会变形）',
 }
