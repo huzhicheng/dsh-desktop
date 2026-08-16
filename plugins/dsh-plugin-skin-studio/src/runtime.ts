@@ -122,9 +122,10 @@ function washColor(config: SkinConfig, dark: boolean): string {
 function textHalo(config: SkinConfig, dark: boolean): string {
   if (config.textContrast <= 0) return 'none'
   const [r, g, b] = bgChannels(config, dark)
-  const near = (config.textContrast * 0.55).toFixed(3)
-  const far = (config.textContrast * 0.4).toFixed(3)
-  return `0 0 1px rgba(${r}, ${g}, ${b}, ${near}), 0 1px 3px rgba(${r}, ${g}, ${b}, ${far})`
+  const ink = (alpha: number): string => `rgba(${r}, ${g}, ${b}, ${(config.textContrast * alpha).toFixed(3)})`
+  // 三层由紧到松叠出一圈实心晕。这是「只在文字所在处做保护」——
+  // 比整屏压一层蒙版更能保住背景图，代价只是每个字周围一小圈。
+  return `0 0 1px ${ink(0.95)}, 0 0 3px ${ink(0.8)}, 0 0 7px ${ink(0.6)}`
 }
 
 /**

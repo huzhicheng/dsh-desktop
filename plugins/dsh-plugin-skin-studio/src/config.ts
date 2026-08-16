@@ -90,9 +90,10 @@ export const PRESETS: readonly SkinPreset[] = [
  * 之后仍可用滑块微调。
  */
 export const BACKGROUND_LEVELS: readonly SkinPreset[] = [
-  { id: 'soft', name: '淡雅', patch: { imageOpacity: 0.4, wash: 0.62, transparency: 0.5 } },
-  { id: 'medium', name: '适中', patch: { imageOpacity: 0.68, wash: 0.4, transparency: 0.75 } },
-  { id: 'clear', name: '清晰', patch: { imageOpacity: 1, wash: 0.12, transparency: 1 } },
+  { id: 'soft', name: '淡雅', patch: { imageOpacity: 0.4, wash: 0.6, transparency: 0.5, textContrast: 0.5 } },
+  { id: 'medium', name: '适中', patch: { imageOpacity: 0.7, wash: 0.45, transparency: 0.75, textContrast: 0.65 } },
+  // 「清晰」指背景图看得清楚，不是取消保护：蒙版仍留一层，靠文字光晕补足可读性
+  { id: 'clear', name: '清晰', patch: { imageOpacity: 1, wash: 0.3, transparency: 0.9, textContrast: 0.85 } },
 ]
 
 /** 可选字体。stack 为空表示不覆盖，沿用 Harness 自己的字体栈。 */
