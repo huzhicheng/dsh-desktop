@@ -46,7 +46,7 @@ var DEFAULT_CONFIG = {
   transparency: 0.8,
   wash: 0.58,
   fontFamily: "",
-  textContrast: 0.6
+  textContrast: 0.85
 };
 var PRESETS = [
   { id: "amber", name: "\u6696\u7802", patch: { accent: "#d3aa61", bgDark: "#171817", bgLight: "#f6f5f1" } },
@@ -56,10 +56,10 @@ var PRESETS = [
   { id: "slate", name: "\u7D20\u77F3", patch: { accent: "#9aa0a6", bgDark: "#161718", bgLight: "#f4f4f5" } }
 ];
 var BACKGROUND_LEVELS = [
-  { id: "soft", name: "\u6DE1\u96C5", patch: { imageOpacity: 0.4, wash: 0.6, transparency: 0.5, textContrast: 0.5 } },
-  { id: "medium", name: "\u9002\u4E2D", patch: { imageOpacity: 0.7, wash: 0.45, transparency: 0.75, textContrast: 0.65 } },
+  { id: "soft", name: "\u6DE1\u96C5", patch: { imageOpacity: 0.4, wash: 0.5, transparency: 0.5, textContrast: 0.75 } },
+  { id: "medium", name: "\u9002\u4E2D", patch: { imageOpacity: 0.7, wash: 0.3, transparency: 0.75, textContrast: 0.85 } },
   // 「清晰」指背景图看得清楚，不是取消保护：蒙版仍留一层，靠文字光晕补足可读性
-  { id: "clear", name: "\u6E05\u6670", patch: { imageOpacity: 1, wash: 0.3, transparency: 0.9, textContrast: 0.85 } }
+  { id: "clear", name: "\u6E05\u6670", patch: { imageOpacity: 1, wash: 0.1, transparency: 0.95, textContrast: 1 } }
 ];
 var FONTS = [
   { id: "default", name: "\u8DDF\u968F Harness\uFF08\u9ED8\u8BA4\uFF09", stack: "" },
@@ -221,8 +221,17 @@ function washColor(config, dark) {
 function textHalo(config, dark) {
   if (config.textContrast <= 0) return "none";
   const [r, g, b] = bgChannels(config, dark);
-  const ink = (alpha) => `rgba(${r}, ${g}, ${b}, ${(config.textContrast * alpha).toFixed(3)})`;
-  return `0 0 1px ${ink(0.95)}, 0 0 3px ${ink(0.8)}, 0 0 7px ${ink(0.6)}`;
+  const ink = `rgba(${r}, ${g}, ${b}, ${(config.textContrast * 0.95).toFixed(3)})`;
+  return [
+    "1px 0",
+    "-1px 0",
+    "0 1px",
+    "0 -1px",
+    "1px 1px",
+    "1px -1px",
+    "-1px 1px",
+    "-1px -1px"
+  ].map((offset) => `${offset} 0 ${ink}`).join(", ");
 }
 function createSkinRuntime(css) {
   let current;
@@ -1288,13 +1297,15 @@ body[data-ds-dark-theme] {
 body,
 body[data-ds-dark-theme] {
   /*
-   * \u9605\u8BFB\u533A\u7684\u5E95\u3002
+   * \u9605\u8BFB\u533A\u4E0D\u94FA\u5E95\u3002
    *
-   * \u539F\u6765\u5199\u6B7B transparent\uFF0C\u6B63\u6587\u7956\u5148\u94FE\u4E0A\u4E00\u5C42\u5E95\u90FD\u6CA1\u6709\uFF0C\u5B57\u662F\u76F4\u63A5\u538B\u5728\u80CC\u666F\u56FE\u4E0A\u7684
-   * \u2014\u2014\u5B9E\u6D4B\u80CC\u666F\u56FE\u504F\u6697\u65F6\u5BF9\u6BD4\u5EA6\u6389\u5230 1.0\uFF0C\u7B49\u4E8E\u770B\u4E0D\u89C1\u3002\u8FD9\u91CC\u7ED9\u5B83\u4E00\u5C42\u968F\u900F\u660E\u5EA6
-   * \u53D8\u5316\u4F46\u6C38\u8FDC\u4E0D\u4E3A\u96F6\u7684\u5E95\uFF1A\u80CC\u666F\u56FE\u4ECD\u7136\u900F\u5F97\u4E0A\u6765\uFF0C\u4F46\u5B57\u59CB\u7EC8\u8E29\u5728\u4E00\u5C42\u7EB8\u4E0A\u3002
+   * \u8BD5\u8FC7\u7ED9\u5B83\u4E00\u5C42\u534A\u900F\u660E\u7684\u5E95\u6765\u4FDD\u62A4\u6B63\u6587\uFF0C\u4F46\u90A3\u7B49\u4E8E\u5728\u6574\u5F20\u80CC\u666F\u56FE\u4E0A\u8499\u4E00\u5C42\u767D\u7EB1\uFF1A
+   * \u56FE\u7ACB\u523B\u53D1\u7070\u53D1\u7CCA\uFF0C\u800C\u6536\u76CA\u5F88\u5C0F\uFF08\u80CC\u666F\u5168\u9ED1\u65F6\u5BF9\u6BD4\u5EA6\u53EA\u4ECE 1.0 \u63D0\u5230 2.54\uFF0C\u7167\u6837
+   * \u4E0D\u8FBE\u6807\uFF09\u3002\u6574\u5C4F\u538B\u4E00\u5C42\u662F\u8FD9\u4E2A\u95EE\u9898\u4E0A\u6700\u5DEE\u7684\u89E3\u6CD5\u3002
+   * \u6539\u7531\u6587\u5B57\u81EA\u5DF1\u7684\u786C\u63CF\u8FB9\u6765\u4FDD\u62A4\u2014\u2014\u53EA\u5F71\u54CD\u6BCF\u4E2A\u5B57\u8F6E\u5ED3\u5916\u7684 1px\uFF0C\u56FE\u4FDD\u6301\u901A\u900F\u3002
+   * \u60F3\u8981\u66F4\u5F3A\u7684\u6574\u4F53\u4FDD\u62A4\u65F6\uFF0C\u7528\u300C\u8499\u7248\u5F3A\u5EA6\u300D\u90A3\u4E2A\u6ED1\u5757\uFF0C\u90A3\u662F\u7528\u6237\u53EF\u89C1\u53EF\u63A7\u7684\u3002
    */
-  --dsw-alias-bg-base: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 68%), transparent);
+  --dsw-alias-bg-base: transparent;
   --dsw-alias-bg-layer-1: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 55%), transparent);
   --dsw-alias-bg-layer-2: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 45%), transparent);
   --dsw-alias-bg-layer-3: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 32%), transparent);

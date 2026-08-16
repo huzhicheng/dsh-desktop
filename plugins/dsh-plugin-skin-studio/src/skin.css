@@ -201,13 +201,15 @@ body[data-ds-dark-theme] {
 body,
 body[data-ds-dark-theme] {
   /*
-   * 阅读区的底。
+   * 阅读区不铺底。
    *
-   * 原来写死 transparent，正文祖先链上一层底都没有，字是直接压在背景图上的
-   * ——实测背景图偏暗时对比度掉到 1.0，等于看不见。这里给它一层随透明度
-   * 变化但永远不为零的底：背景图仍然透得上来，但字始终踩在一层纸上。
+   * 试过给它一层半透明的底来保护正文，但那等于在整张背景图上蒙一层白纱：
+   * 图立刻发灰发糊，而收益很小（背景全黑时对比度只从 1.0 提到 2.54，照样
+   * 不达标）。整屏压一层是这个问题上最差的解法。
+   * 改由文字自己的硬描边来保护——只影响每个字轮廓外的 1px，图保持通透。
+   * 想要更强的整体保护时，用「蒙版强度」那个滑块，那是用户可见可控的。
    */
-  --dsw-alias-bg-base: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 68%), transparent);
+  --dsw-alias-bg-base: transparent;
   --dsw-alias-bg-layer-1: color-mix(in srgb, var(--skin-bg) calc(100% - var(--skin-transparency) * 55%), transparent);
   --dsw-alias-bg-layer-2: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 5%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 45%), transparent);
   --dsw-alias-bg-layer-3: color-mix(in srgb, color-mix(in srgb, var(--skin-text) 9%, var(--skin-bg)) calc(100% - var(--skin-transparency) * 32%), transparent);

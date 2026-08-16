@@ -64,7 +64,7 @@ export const DEFAULT_CONFIG: SkinConfig = {
   transparency: 0.8,
   wash: 0.58,
   fontFamily: '',
-  textContrast: 0.6,
+  textContrast: 0.85,
 }
 
 /** 内置预设，用户不选图也能一键换个样子。 */
@@ -90,10 +90,10 @@ export const PRESETS: readonly SkinPreset[] = [
  * 之后仍可用滑块微调。
  */
 export const BACKGROUND_LEVELS: readonly SkinPreset[] = [
-  { id: 'soft', name: '淡雅', patch: { imageOpacity: 0.4, wash: 0.6, transparency: 0.5, textContrast: 0.5 } },
-  { id: 'medium', name: '适中', patch: { imageOpacity: 0.7, wash: 0.45, transparency: 0.75, textContrast: 0.65 } },
+  { id: 'soft', name: '淡雅', patch: { imageOpacity: 0.4, wash: 0.5, transparency: 0.5, textContrast: 0.75 } },
+  { id: 'medium', name: '适中', patch: { imageOpacity: 0.7, wash: 0.3, transparency: 0.75, textContrast: 0.85 } },
   // 「清晰」指背景图看得清楚，不是取消保护：蒙版仍留一层，靠文字光晕补足可读性
-  { id: 'clear', name: '清晰', patch: { imageOpacity: 1, wash: 0.3, transparency: 0.9, textContrast: 0.85 } },
+  { id: 'clear', name: '清晰', patch: { imageOpacity: 1, wash: 0.1, transparency: 0.95, textContrast: 1 } },
 ]
 
 /** 可选字体。stack 为空表示不覆盖，沿用 Harness 自己的字体栈。 */

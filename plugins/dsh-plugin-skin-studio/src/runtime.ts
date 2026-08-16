@@ -122,10 +122,22 @@ function washColor(config: SkinConfig, dark: boolean): string {
 function textHalo(config: SkinConfig, dark: boolean): string {
   if (config.textContrast <= 0) return 'none'
   const [r, g, b] = bgChannels(config, dark)
-  const ink = (alpha: number): string => `rgba(${r}, ${g}, ${b}, ${(config.textContrast * alpha).toFixed(3)})`
-  // 三层由紧到松叠出一圈实心晕。这是「只在文字所在处做保护」——
-  // 比整屏压一层蒙版更能保住背景图，代价只是每个字周围一小圈。
-  return `0 0 1px ${ink(0.95)}, 0 0 3px ${ink(0.8)}, 0 0 7px ${ink(0.6)}`
+  const ink = `rgba(${r}, ${g}, ${b}, ${(config.textContrast * 0.95).toFixed(3)})`
+  /*
+   * 八个方向各 1px、模糊半径为 0——给字形描一圈硬边，字幕就是这么做的。
+   *
+   * 不能用大范围的模糊光晕：那在浅色背景上根本起不到分离作用（晕色和底色
+   * 本就接近），只会把笔画边缘糊开，看着更虚（实测踩过）。
+   *
+   * 硬描边的好处是两头都占：拿纯黑/中灰/纯白/高频条纹四种底做过对比，
+   * 白底上它与无描边的效果像素级一致（描边色就是底色，等于隐形），
+   * 黑底上则是唯一能把字切出来的做法——无描边那行最亮像素为 0，
+   * 即完全看不见；八向硬描边能到 245。
+   */
+  return [
+    '1px 0', '-1px 0', '0 1px', '0 -1px',
+    '1px 1px', '1px -1px', '-1px 1px', '-1px -1px',
+  ].map(offset => `${offset} 0 ${ink}`).join(', ')
 }
 
 /**
