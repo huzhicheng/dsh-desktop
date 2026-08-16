@@ -41,7 +41,7 @@ interface ModelSelection {
  *   缺了会在第一轮就报 `{{model}}` 无值
  */
 function cordisPatch(selection: ModelSelection): string {
-  return `# 由 DSH Desktop 生成，供飞书桥接使用。手改后会在下次启动桥接时被覆盖。
+  return `# 由 DSH Desktop 生成，供远程控制使用。手改后会在下次启动桥接时被覆盖。
 - id: system-prompt
   config:
     persona: >-
@@ -157,7 +157,7 @@ async function syncAcpSettings(permissionMode: PermissionMode): Promise<ModelSel
   if (desktopModel !== undefined) next['agent-default-model'] = desktopModel
   next['permission'] = { defaultPreset: permissionMode }
   const header = '# 由 DSH Desktop 生成：IM 桥接（ACP profile）专用设置，与桌面端 settings.yaml 隔离。\n'
-    + '# 模型跟随桌面端，权限由「飞书桥接设置」决定。\n'
+    + '# 模型跟随桌面端，权限由「远程控制」设置决定。\n'
   await writeFile(target, header + dump(next))
 
   const selection = next['agent-default-model']

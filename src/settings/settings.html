@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>飞书桥接设置</title>
+  <title>远程控制</title>
   <style>
     /* 与壳其余部分同源的 Moli 皮肤：暖中性底 + 金褐强调色 */
     :root {
@@ -92,6 +92,37 @@
     }
     #saveHint { color: var(--muted); font-size: 12px; }
     #saveHint.error { color: var(--danger); }
+    /*
+     * 概览网格。
+     *
+     * 五个区块以前平铺成一长条，找一项要滚半天，而且看不出哪些已经配好。
+     * 改成先给一屏卡片，当前值直接印在卡上（开没开、几个人、几个目录），
+     * 点进去才展开表单。通道会继续变多，网格能自然横向扩展。
+     */
+    .group + .group { margin-top: 20px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(172px, 1fr)); gap: 10px; }
+    .card {
+      display: flex; flex-direction: column; text-align: left;
+      padding: 12px 13px; min-height: 92px;
+      border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+      color: var(--fg); font: inherit; cursor: pointer;
+      transition: border-color .12s ease, transform .12s ease;
+    }
+    .card:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .card-icon { color: var(--accent); display: flex; }
+    .card-title { font-weight: 600; font-size: 13px; }
+    .card-sub { color: var(--muted); font-size: 11px; line-height: 1.45; margin-top: 1px; }
+    .pill {
+      font-size: 10px; padding: 1px 7px; border-radius: 999px;
+      border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+    }
+    .pill.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+    .pill.todo { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+    .detail-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .detail-title { font-weight: 600; font-size: 14px; }
+    /* 标题已经在返回行里了，区块自己那行小标题就是重复 */
+    .pane h2 { display: none; }
     .warn {
       border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line));
       background: color-mix(in srgb, var(--danger) 8%, transparent);
@@ -102,12 +133,31 @@
 <body>
   <header>
     <div class="dot" id="dot"></div>
-    <div class="title">飞书桥接</div>
+    <div class="title">远程控制</div>
     <div id="stateText">未启动</div>
   </header>
 
   <main>
-    <section>
+    <!-- 概览：一屏看全，每张卡把当前值写在脸上 -->
+    <div id="grid">
+      <div class="group">
+        <h2>通道</h2>
+        <div class="cards" id="cardsChannel"></div>
+      </div>
+      <div class="group">
+        <h2>通用</h2>
+        <div class="cards" id="cardsGeneral"></div>
+      </div>
+    </div>
+
+    <!-- 详情：同一时刻只展开一个区块 -->
+    <div id="detail" hidden>
+    <div class="detail-head">
+      <button id="back" class="ghost">← 返回</button>
+      <div class="detail-title" id="detailTitle"></div>
+    </div>
+
+    <section class="pane" id="pane-feishu" data-key="feishu" data-title="飞书" hidden>
       <h2>飞书</h2>
 
       <!-- 主路径：扫码让飞书自动建应用、配权限与事件订阅，用户一个字段都不用填 -->
@@ -133,7 +183,7 @@
 
       <div class="field switch">
         <input type="checkbox" id="enabled">
-        <label for="enabled" style="margin:0">启用飞书桥接</label>
+        <label for="enabled" style="margin:0">启用飞书</label>
       </div>
       <div class="field">
         <label for="appId">App ID</label>
@@ -162,9 +212,7 @@
       </div>
     </section>
 
-    </section>
-
-    <section>
+    <section class="pane" id="pane-telegram" data-key="telegram" data-title="Telegram" hidden>
       <h2>Telegram</h2>
       <div class="field switch">
         <input type="checkbox" id="tgEnabled">
@@ -184,8 +232,9 @@
           不知道自己的 ID 就直接给机器人发一句话，它会把你的 ID 回给你。
         </div>
       </div>
+    </section>
 
-    <section>
+    <section class="pane" id="pane-access" data-key="access" data-title="谁可以用" hidden>
       <h2>谁可以用</h2>
       <div class="field">
         <label for="allowedUsers">飞书用户 open_id 白名单（每行一个）</label>
@@ -197,7 +246,7 @@
       </div>
     </section>
 
-    <section>
+    <section class="pane" id="pane-workspaces" data-key="workspaces" data-title="工作目录" hidden>
       <h2>工作目录</h2>
       <div id="workspaces"></div>
       <button id="addWorkspace" class="ghost">+ 添加目录</button>
@@ -208,7 +257,7 @@
       </div>
     </section>
 
-    <section>
+    <section class="pane" id="pane-permission" data-key="permission" data-title="权限" hidden>
       <h2>权限</h2>
       <div class="field">
         <select id="permissionMode">
@@ -222,6 +271,7 @@
         </div>
       </div>
     </section>
+    </div>
   </main>
 
   <footer>
@@ -236,7 +286,14 @@
   // 独立系统窗口点外面不会关（那是操作系统行为），但键盘关闭是标准做法。
   // 表单里可能有没保存的输入，所以不做失焦自动关闭。
   window.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' || ((event.metaKey || event.ctrlKey) && event.key === 'w')) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      // 在详情里 Esc 先退回概览，再按一次才关窗
+      if (document.getElementById('detail').hidden) window.close()
+      else showGrid()
+      return
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key === 'w') {
       event.preventDefault()
       window.close()
     }
@@ -303,6 +360,119 @@
       $('stateText').textContent = (labels[status.state] ?? status.state) + (status.message ? '：' + status.message : '')
     }
 
+    // ── 概览网格 ────────────────────────────────────────────────
+    // 卡片副标题直接读当前表单值，所以从详情退回来时重渲染一次就是最新的，
+    // 不需要额外维护一份状态。
+    const CARD_GROUPS = {
+      cardsChannel: ['feishu', 'telegram'],
+      cardsGeneral: ['access', 'workspaces', 'permission'],
+    }
+    // 线性图标而非彩色 emoji：emoji 在各系统上长相不一，颜色也压不住，
+    // 跟这套暖金配色打架。stroke 用 currentColor，跟着主题走。
+    const ICONS = {
+      feishu: '<path d="M17.4 9.4c0 3.2-3.1 5.9-6.9 5.9-.9 0-1.8-.2-2.6-.4L4 16.4l1.2-2.8C4.2 12.5 3.6 11 3.6 9.4c0-3.3 3-6 6.9-6s6.9 2.7 6.9 6Z"/>',
+      telegram: '<path d="M18.4 2.6 2.6 8.8l5.3 2.1m10.5-8.3L12.6 18l-4.7-7.1m10.5-8.3-10.5 8.3m0 0v4.4l2.5-2.7"/>',
+      access: '<circle cx="7" cy="13" r="3.3"/><path d="m9.4 10.6 7.1-7.1M14 6l2.1 2.1M11.9 8.1 14 10.2"/>',
+      workspaces: '<path d="M2.8 5.4c0-.8.6-1.4 1.4-1.4h3.2l1.7 2h6.7c.8 0 1.4.6 1.4 1.4v7.2c0 .8-.6 1.4-1.4 1.4H4.2c-.8 0-1.4-.6-1.4-1.4V5.4Z"/>',
+      permission: '<path d="M10 2.6 4.2 4.9v5c0 3.4 2.4 6.5 5.8 7.5 3.4-1 5.8-4.1 5.8-7.5v-5L10 2.6Z"/>',
+    }
+    const PERMISSION_LABELS = {
+      'read-only': '只读，写入都要审批',
+      'workspace-write': '工作目录内可写',
+      'danger-full-access': '什么都不问',
+    }
+    // 凭据只存在主进程，界面拿不到明文，只知道有没有存过
+    const saved = { feishu: false, telegram: false }
+
+    function summarize(key) {
+      if (key === 'feishu' || key === 'telegram') {
+        const on = key === 'feishu' ? $('enabled').checked : $('tgEnabled').checked
+        const ready = key === 'feishu'
+          ? saved.feishu && $('appId').value.trim() !== ''
+          : saved.telegram
+        if (!ready) {
+          return {
+            pill: '待配置', tone: 'todo',
+            sub: key === 'feishu' ? '扫码即可创建，不用手填' : '找 @BotFather 要个 token',
+          }
+        }
+        return on
+          ? { pill: '已开启', tone: 'on', sub: '凭据已保存' }
+          : { pill: '已关闭', tone: '', sub: '凭据还在，随时可开' }
+      }
+      if (key === 'access') {
+        const count = $('allowedUsers').value.split('\n').filter((line) => line.trim()).length
+        return count === 0
+          ? { pill: '空', tone: 'todo', sub: '还没人能用，先把自己加进去' }
+          : { pill: count + ' 人', tone: 'on', sub: '只有这些人能驱动 agent' }
+      }
+      if (key === 'workspaces') {
+        const valid = workspaces.filter((entry) => entry.name.trim() && entry.path.trim())
+        const fallback = $('defaultWorkspace').value
+        return valid.length === 0
+          ? { pill: '空', tone: 'todo', sub: 'agent 还没有可活动的目录' }
+          : { pill: valid.length + ' 个', tone: 'on', sub: fallback ? '默认 ' + fallback : '未设默认' }
+      }
+      const mode = $('permissionMode').value
+      return {
+        pill: mode === 'danger-full-access' ? '放行' : '受限',
+        tone: mode === 'danger-full-access' ? 'todo' : 'on',
+        sub: PERMISSION_LABELS[mode] ?? mode,
+      }
+    }
+
+    function renderGrid() {
+      for (const [containerId, keys] of Object.entries(CARD_GROUPS)) {
+        const container = $(containerId)
+        container.innerHTML = ''
+        for (const key of keys) {
+          const pane = $('pane-' + key)
+          const info = summarize(key)
+
+          const icon = document.createElement('span')
+          icon.className = 'card-icon'
+          icon.innerHTML = '<svg viewBox="0 0 20 20" width="20" height="20" fill="none" '
+            + 'stroke="currentColor" stroke-width="1.5" stroke-linecap="round" '
+            + 'stroke-linejoin="round">' + ICONS[key] + '</svg>'
+          const pill = document.createElement('span')
+          pill.className = 'pill ' + info.tone
+          pill.textContent = info.pill
+          const top = document.createElement('div')
+          top.className = 'card-top'
+          top.append(icon, pill)
+
+          const title = document.createElement('div')
+          title.className = 'card-title'
+          title.textContent = pane.dataset.title
+          const sub = document.createElement('div')
+          sub.className = 'card-sub'
+          sub.textContent = info.sub
+
+          const card = document.createElement('button')
+          card.className = 'card'
+          card.onclick = () => { openPane(key) }
+          card.append(top, title, sub)
+          container.append(card)
+        }
+      }
+    }
+
+    function openPane(key) {
+      for (const pane of document.querySelectorAll('.pane')) pane.hidden = pane.dataset.key !== key
+      $('detailTitle').textContent = $('pane-' + key).dataset.title
+      $('grid').hidden = true
+      $('detail').hidden = false
+      document.querySelector('main').scrollTop = 0
+    }
+
+    function showGrid() {
+      // 扫码还挂着就先收掉，免得退出去之后看不见的地方仍在轮询
+      if (!$('setupRunning').hidden) { api.registerCancel(); setupPhase(false) }
+      $('detail').hidden = true
+      $('grid').hidden = false
+      renderGrid()
+    }
+
     async function init() {
       const config = await api.load()
       $('enabled').checked = config.feishu.enabled
@@ -317,6 +487,9 @@
       renderWorkspaces()
       renderDefaults()
       $('defaultWorkspace').value = config.defaultWorkspace ?? ''
+      saved.feishu = Boolean(config.hasSecret)
+      saved.telegram = Boolean(config.hasTelegramToken)
+      renderGrid()
       applyStatus(await api.status())
     }
 
@@ -375,6 +548,8 @@
     }
     $('openConsole').onclick = () => { api.openExternal('https://open.feishu.cn/app') }
 
+    $('back').onclick = showGrid
+
     $('addWorkspace').onclick = () => { workspaces.push({ name: '', path: '' }); renderWorkspaces() }
 
     $('save').onclick = async () => {
@@ -403,8 +578,13 @@
         hint.textContent = result.error
         return
       }
+      if ($('appSecret').value !== '') saved.feishu = true
+      if ($('tgToken').value !== '') saved.telegram = true
       $('appSecret').value = ''
-      $('secretHint').textContent = '已保存，留空则沿用'
+      $('tgToken').value = ''
+      if (saved.feishu) $('secretHint').textContent = '已保存，留空则沿用'
+      if (saved.telegram) $('tgTokenHint').textContent = '已保存，留空则沿用'
+      renderGrid()
       hint.textContent = '已保存'
       setTimeout(() => { hint.textContent = '' }, 2500)
     }

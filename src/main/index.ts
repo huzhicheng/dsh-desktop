@@ -193,7 +193,7 @@ async function boot(): Promise<void> {
 }
 
 /**
- * 启动飞书桥接：先把 ACP profile 准备好（装 dsh-acp、同步设置），再拉起进程。
+ * 启动远程控制桥接：先把 ACP profile 准备好（装 dsh-acp、同步设置），再拉起进程。
  * 未启用时什么都不做；失败只记日志，桥接不该影响主界面。
  */
 async function startBridge(runtimeVersion: string): Promise<void> {
@@ -203,7 +203,7 @@ async function startBridge(runtimeVersion: string): Promise<void> {
     await ensureAcpProfile(runtimeVersion, config.permissionMode)
     await bridge.start(harnessEntry(runtimeVersion))
   } catch (error) {
-    log.warn('飞书桥接启动失败：', error instanceof Error ? error.message : String(error))
+    log.warn('远程控制桥接启动失败：', error instanceof Error ? error.message : String(error))
   }
 }
 

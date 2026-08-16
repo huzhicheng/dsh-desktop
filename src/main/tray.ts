@@ -63,10 +63,10 @@ export function refreshTray(deps: TrayDeps): void {
         ? `正在重启服务（${phase.version}）…`
         : undefined
   const bridgeLabel = {
-    connected: '飞书桥接：已连接',
-    starting: '飞书桥接：连接中…',
-    error: '飞书桥接：异常',
-    stopped: '飞书桥接：未启用',
+    connected: '远程控制：已连接',
+    starting: '远程控制：连接中…',
+    error: '远程控制：异常',
+    stopped: '远程控制：未启用',
   }[deps.getBridgeState()]
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: version === undefined ? 'Harness 未安装' : `Harness ${version}`, enabled: false },
@@ -74,7 +74,7 @@ export function refreshTray(deps: TrayDeps): void {
     { label: bridgeLabel, enabled: false },
     { type: 'separator' },
     { label: '打开主窗口', click: () => { deps.openMainWindow() } },
-    { label: '飞书桥接设置…', click: () => { deps.openBridgeSettings() } },
+    { label: '远程控制设置…', click: () => { deps.openBridgeSettings() } },
     { label: '检查 Harness 更新', enabled: phase.phase === 'idle', click: () => { deps.checkUpdate() } },
     { label: '重启 Harness 服务', enabled: phase.phase === 'idle', click: () => { deps.restartService() } },
     { label: '打开日志目录', click: () => { deps.openLogs() } },

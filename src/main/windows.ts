@@ -41,7 +41,7 @@ export function closeStatusWindow(): void {
 
 let settingsWindow: BrowserWindow | undefined
 
-/** 飞书桥接设置窗口。 */
+/** 远程控制设置窗口。 */
 export function showBridgeSettings(): void {
   if (settingsWindow !== undefined && !settingsWindow.isDestroyed()) {
     settingsWindow.focus()
@@ -52,7 +52,7 @@ export function showBridgeSettings(): void {
     height: 720,
     minWidth: 480,
     minHeight: 520,
-    title: '飞书桥接设置',
+    title: '远程控制',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     show: false,
     webPreferences: {

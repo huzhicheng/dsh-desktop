@@ -75,7 +75,7 @@ export class BridgeCore {
   }
 
   private listWorkspaces(): string {
-    if (this.config.workspaces.length === 0) return '还没有配置任何工作目录，去桌面端「飞书桥接」设置里加。'
+    if (this.config.workspaces.length === 0) return '还没有配置任何工作目录，去桌面端「远程控制」设置里加。'
     return ['**可用工作目录**', ...this.config.workspaces.map((entry) => `- \`${entry.name}\` — ${entry.path}`)].join('\n')
   }
 
