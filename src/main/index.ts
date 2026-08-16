@@ -9,7 +9,8 @@ import { join } from 'node:path'
 import { app, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { ensureAcpProfile } from './acp-profile'
 import {
-  bridgeHasSecret, bridgeHasTelegramToken, createBridgeService, readBridgeConfig, writeBridgeConfig,
+  anyChannelEnabled, bridgeHasSecret, bridgeHasTelegramToken, createBridgeService,
+  readBridgeConfig, writeBridgeConfig,
 } from './bridge-service'
 import {
   cancelFeishuRegistration, permissionJson, REQUIRED_EVENTS, startFeishuRegistration,
@@ -198,7 +199,8 @@ async function boot(): Promise<void> {
  */
 async function startBridge(runtimeVersion: string): Promise<void> {
   const config = readBridgeConfig()
-  if (!config.feishu.enabled) return
+  // 任一通道启用就得起进程：只开 Telegram 而不开飞书是完全合理的配置
+  if (!anyChannelEnabled(config)) return
   try {
     await ensureAcpProfile(runtimeVersion, config.permissionMode)
     await bridge.start(harnessEntry(runtimeVersion))

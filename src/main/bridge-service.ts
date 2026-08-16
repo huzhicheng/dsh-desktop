@@ -64,7 +64,7 @@ export function readBridgeConfig(): BridgeConfig {
 }
 
 /** 至少启用了一个通道才需要起桥接进程。 */
-function anyChannelEnabled(config: BridgeConfig): boolean {
+export function anyChannelEnabled(config: BridgeConfig): boolean {
   return config.feishu.enabled || config.telegram.enabled
 }
 
