@@ -8,6 +8,9 @@
 import { app, dialog, ipcMain, shell } from 'electron'
 import { ensureAcpProfile } from './acp-profile'
 import { bridgeHasSecret, createBridgeService, readBridgeConfig, writeBridgeConfig } from './bridge-service'
+import {
+  cancelFeishuRegistration, permissionJson, REQUIRED_EVENTS, startFeishuRegistration,
+} from './feishu-register'
 import { APP_DISPLAY_NAME } from './config'
 import { createHarnessService } from './harness-service'
 import { initLogger, log } from './logger'
@@ -18,7 +21,7 @@ import { focusWindow, hasWindow, reloadHarness, showShellWindow } from './shell-
 import { createTray, destroyTray, refreshTray, type TrayDeps } from './tray'
 import { createHarnessUpdater, type HarnessUpdater } from './updater'
 import {
-  bridgeSettingsWindow, closeStatusWindow, pushBridgeStatus, pushStatus,
+  bridgeSettingsWindow, closeStatusWindow, pushBridgeRegister, pushBridgeStatus, pushStatus,
   showBridgeSettings, showStatusWindow,
 } from './windows'
 import type { BridgeConfig } from '../bridge/types'
@@ -196,6 +199,44 @@ async function startBridge(runtimeVersion: string): Promise<void> {
 
 /** 设置窗口与主进程之间的通道。 */
 function registerBridgeIpc(): void {
+  // Harness 侧栏的「远程控制」入口由插件提供，经 preload 转到这里；
+  // 插件在浏览器里跑，打不开壳的窗口，只能由壳自己来开。
+  ipcMain.on('desktop:open-remote-control', () => { showBridgeSettings() })
+
+  // 扫码创建飞书应用：过程状态实时推给设置页，成功后直接落盘并回填界面。
+  // 手填兜底始终保留——扫码依赖平台灰度，不能当唯一路径。
+  ipcMain.handle('bridge:register-start', async () => {
+    const result = await startFeishuRegistration((event) => { pushBridgeRegister(event) })
+    if (result === undefined) return { ok: false }
+    const current = readBridgeConfig()
+    writeBridgeConfig({
+      ...current,
+      feishu: {
+        ...current.feishu,
+        enabled: true,
+        appId: result.appId,
+        appSecret: result.appSecret,
+        domain: result.domain,
+      },
+      // 扫码的人就是要用它的人，白名单自动补上，免去让用户自己去找 open_id
+      allowedUserIds: result.openId === undefined || current.allowedUserIds.includes(result.openId)
+        ? current.allowedUserIds
+        : [...current.allowedUserIds, result.openId],
+    })
+    return { ok: true, appId: result.appId, domain: result.domain, openId: result.openId }
+  })
+  ipcMain.on('bridge:register-cancel', () => { cancelFeishuRegistration() })
+  // 授权页要在系统默认浏览器里打开——用户的飞书登录态在那儿，
+  // 开进应用内置窗口既登录不上，也不该让应用去承载第三方登录页
+  ipcMain.on('bridge:open-external', (_event, url: unknown) => {
+    if (typeof url === 'string' && /^https:\/\//.test(url)) void shell.openExternal(url)
+  })
+  // 手填路径的助手：一段可直接粘进开放平台「批量导入权限」的 JSON
+  ipcMain.handle('bridge:permission-json', () => ({
+    scopes: permissionJson(),
+    events: [...REQUIRED_EVENTS],
+  }))
+
   ipcMain.handle('bridge:get-config', () => ({ ...readBridgeConfig(), hasSecret: bridgeHasSecret() }))
 
   ipcMain.handle('bridge:save-config', async (_event, incoming: Partial<BridgeConfig>) => {

@@ -6,6 +6,7 @@
  * 这样命令行启动与桌面端启动看到的是同一套界面，而不是壳再套一层导航。
  */
 
+import { join } from 'node:path'
 import { BrowserWindow, shell } from 'electron'
 import { APP_DISPLAY_NAME } from './config'
 
@@ -69,6 +70,10 @@ export async function showShellWindow(origin: string): Promise<void> {
         }
       : { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#00000000', symbolColor: '#8b8b8b', height: 40 } }),
     webPreferences: {
+      // 只为侧栏「远程控制」入口开一条通道：远程控制是壳的能力（要跑进程、
+      // 存加密凭据），而入口由浏览器里的插件提供，够不到壳。preload 只暴露
+      // 一个打开方法，比往页面里注入 DOM 稳得多，也不影响 dsh 自身升级。
+      preload: join(__dirname, '../preload/desktop.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

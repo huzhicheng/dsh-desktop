@@ -148,6 +148,9 @@ Harness 的在线升级开箱即用（走 npm registry）。App 壳自身的升�
 
 ## Windows 打包（两种方式）
 
+完整的 Windows 虚拟机原生构建、安装与卸载验证步骤见
+[docs/windows-build.md](docs/windows-build.md)。
+
 **方式一：mac 上交叉打包，只出免安装版**
 
 ```sh

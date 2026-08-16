@@ -8,7 +8,7 @@
  * 皮肤本就是纯展示偏好，存本地既合适也不受这条限制。
  */
 
-import { createElement, useEffect, useRef } from 'react'
+import { createElement } from 'react'
 import { DEFAULT_CONFIG, normalizeConfig, type SkinConfig } from '../config'
 import { createSkinPanel } from '../panel'
 import { openPluginManager } from '../manager'
@@ -20,6 +20,7 @@ const STORAGE_KEY = 'dsh-skin-studio.config'
 
 /** 侧栏入口用的两个图标路径。 */
 const ICON_PUZZLE = 'M20.5 11H19V7a2 2 0 0 0-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4a2 2 0 0 0-2 2v3.8h1.5a2.6 2.6 0 0 1 0 5.2H2V20a2 2 0 0 0 2 2h3.8v-1.5a2.6 2.6 0 0 1 5.2 0V22H17a2 2 0 0 0 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z'
+const ICON_REMOTE = 'M4 5.5h10a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2zM7 18.5h4M9 14.5v4M17.5 9.5h3a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 16 20v-9a1.5 1.5 0 0 1 1.5-1.5zM19 18.8h.01'
 const ICON_PALETTE = 'M12 2a10 10 0 1 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.2 0-1.1.9-2 2-2h2.4A4.6 4.6 0 0 0 22 10.9C22 6 17.5 2 12 2zm-5.5 10a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3.5 2.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z'
 
 function load(): SkinConfig {
@@ -109,26 +110,6 @@ function openSkinPanel(runtime: ReturnType<typeof createSkinRuntime>): void {
   document.body.appendChild(mask)
 }
 
-/** dsh 的 slot 组件是 React 组件；这里把纯 DOM 面板挂进一个容器里。 */
-function createTabComponent(runtime: ReturnType<typeof createSkinRuntime>): () => unknown {
-  return function SkinStudioTab(): unknown {
-    const host = useRef<HTMLDivElement | null>(null)
-    useEffect(() => {
-      const container = host.current
-      if (container === null) return
-      const panel = createSkinPanel({
-        initial: load(),
-        // 拖动滑块即时看到效果，不必先保存
-        onPreview: (config) => { runtime.apply(config) },
-        onSave: (config) => { save(config) },
-      })
-      container.appendChild(panel)
-      return () => { panel.remove() }
-    }, [])
-    return createElement('div', { ref: host })
-  }
-}
-
 /**
  * 侧栏底部的入口行，外观逐项对齐 dsh 自己的「设置」。
  *
@@ -186,6 +167,12 @@ function entryRow(
     wide ? createElement('span', { style: { overflow: 'hidden', whiteSpace: 'nowrap' } }, label) : null)
 }
 
+/** 桌面壳通过 preload 注入的通道；纯浏览器访问时为 undefined。 */
+interface DesktopBridge { isDesktop?: boolean; openRemoteControl?: () => void }
+function desktopBridge(): DesktopBridge | undefined {
+  return (globalThis as { dshDesktop?: DesktopBridge }).dshDesktop
+}
+
 /**
  * 两个入口做成一次 slot 注册、内部纵向排列。
  *
@@ -195,6 +182,7 @@ function entryRow(
 function createFooterEntries(runtime: ReturnType<typeof createSkinRuntime>): () => unknown {
   return function FooterEntries(props: { wide?: boolean }): unknown {
     const wide = props.wide !== false
+    const desktop = desktopBridge()
     return createElement('div', {
       style: {
         display: 'flex', flexDirection: 'column',
@@ -205,7 +193,12 @@ function createFooterEntries(runtime: ReturnType<typeof createSkinRuntime>): () 
       entryRow('插件', ICON_PUZZLE, wide, () => {
         openPluginManager({ 'dsh-plugin-skin-studio': () => { openSkinPanel(runtime) } })
       }),
-      entryRow('皮肤', ICON_PALETTE, wide, () => { openSkinPanel(runtime) }))
+      entryRow('皮肤', ICON_PALETTE, wide, () => { openSkinPanel(runtime) }),
+      // 远程控制是桌面壳的能力（要跑进程、存加密凭据），浏览器里做不了；
+      // 拿不到壳注入的通道时这一项不出现，插件在纯浏览器下照样可用。
+      desktop?.openRemoteControl === undefined
+        ? null
+        : entryRow('远程控制', ICON_REMOTE, wide, () => { desktop.openRemoteControl?.() }))
   }
 }
 
@@ -229,14 +222,6 @@ export function apply(ctx: {
 
   // 设置页要用 slots 服务，等它就绪再注册；注册不上也只是少一个配置入口。
   ctx.inject?.(['slots'], (scoped) => {
-    // 皮肤配置页：设置 → 插件 → 皮肤
-    scoped.slots.inject('settings.plugins.tab', () => scoped.slots.register({
-      name: 'settings.plugins.tab',
-      id: 'skin-studio',
-      order: 50,
-      label: () => '皮肤',
-    }, createTabComponent(runtime)))
-
     // 插件管理入口：侧栏底部、「设置」上方。
     // dsh 侧栏只开放三个 slot——workspaces 与 settings 都是 single 且已被占用，
     // footer.action 是唯一能给第三方插件放入口的位置。

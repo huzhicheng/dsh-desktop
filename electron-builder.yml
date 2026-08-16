@@ -68,9 +68,13 @@ nsis:
   deleteAppDataOnUninstall: false
   shortcutName: DSH Desktop
 
-# 壳自身在线升级的发布源：有 GitHub 仓库后取消注释并填写，
-# 然后用 electron-builder --publish always 发布即可让 electron-updater 生效。
-# publish:
-#   provider: github
-#   owner: <你的 GitHub 用户名>
-#   repo: <发布仓库名>
+# 发布源。CI 用 `electron-builder --publish always` 上传到 GitHub Releases，
+# 同时生成 electron-updater 需要的 latest.yml / latest-mac.yml——壳自身的
+# 在线升级就是靠这两个文件发现新版本的，所以不要改用手工上传附件的方式。
+#
+# releaseType: draft —— 先进草稿，人工确认后再点发布，避免 CI 一跑就对外可见。
+publish:
+  provider: github
+  owner: huzhicheng
+  repo: dsh-desktop
+  releaseType: draft

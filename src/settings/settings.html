@@ -36,6 +36,11 @@
       display: flex; align-items: center; gap: 10px;
       -webkit-app-region: drag;
     }
+    /*
+     * macOS 上窗口是无边框的（hiddenInset），交通灯浮在页面左上角会压住标题。
+     * 给标题行让出这段高度；Windows/Linux 有原生标题栏，不需要留白。
+     */
+    body.has-overlay-controls header { padding-top: 34px; }
     header .title { font-weight: 600; font-size: 14px; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
     .dot.connected { background: var(--ok); }
@@ -43,6 +48,17 @@
     .dot.starting { background: var(--accent); }
     #stateText { color: var(--muted); font-size: 12px; }
     main { flex: 1; overflow: auto; padding: 18px 20px 24px; }
+    .setup { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
+    .setup-head { margin-bottom: 10px; }
+    .setup-head b { display: block; font-size: 13px; }
+    #setupRunning { display: flex; gap: 14px; align-items: flex-start; }
+    #setupRunning[hidden] { display: none; }
+    #qrImg { border-radius: 8px; background: #fff; flex: none; }
+    .setup-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    #setupStep { font-size: 12px; }
+    button.primary { background: var(--accent); border-color: transparent; color: #fff; font-weight: 600; }
+    button.linklike { background: none; border: none; padding: 4px 0; color: var(--accent); cursor: pointer; font-size: 12px; }
+    button.linklike:hover { text-decoration: underline; }
     section { margin-bottom: 22px; }
     h2 {
       font-size: 12px; font-weight: 600; text-transform: uppercase;
@@ -93,6 +109,28 @@
   <main>
     <section>
       <h2>连接</h2>
+
+      <!-- 主路径：扫码让飞书自动建应用、配权限与事件订阅，用户一个字段都不用填 -->
+      <div class="setup" id="setup">
+        <div class="setup-head">
+          <b>扫码自动配置</b>
+          <span class="hint">飞书会自动创建应用、开好权限与事件订阅，并把凭据填回这里</span>
+        </div>
+        <div id="setupIdle">
+          <button id="scanBtn" class="primary">开始扫码配置</button>
+          <button id="manualToggle" class="linklike">改用手动填写</button>
+        </div>
+        <div id="setupRunning" hidden>
+          <img id="qrImg" alt="飞书扫码二维码" width="180" height="180">
+          <div class="setup-side">
+            <div id="setupStep">正在获取二维码…</div>
+            <a id="qrLink" href="#" class="linklike">在浏览器中打开授权页</a>
+            <div class="hint">用飞书扫码，或点上面的链接在已登录的浏览器里确认。</div>
+            <button id="scanCancel" class="linklike">取消</button>
+          </div>
+        </div>
+      </div>
+
       <div class="field switch">
         <input type="checkbox" id="enabled">
         <label for="enabled" style="margin:0">启用飞书桥接</label>
@@ -112,7 +150,15 @@
           <option value="feishu">飞书（国内）</option>
           <option value="lark">Lark（国际）</option>
         </select>
-        <div class="hint">走 WebSocket 长连接，不需要公网地址或内网穿透。应用需开启机器人能力，并订阅「接收消息」事件与「卡片回调」。</div>
+        <div class="hint">走 WebSocket 长连接，不需要公网地址或内网穿透。</div>
+        <div class="hint" style="margin-top:6px">
+          手动配置时的顺序不能颠倒：<b>先发布一次版本 → 再回来填凭据并保存（进程会建立长连接）→ 然后才能在开放平台保存「长连接接收事件」→ 最后再发一次版本</b>。飞书保存长连接时会实时探测连接是否在线，顺序错了会提示「未检测到应用连接信息」。另外别忘了设置「可用范围」，否则飞书里搜不到机器人。
+        </div>
+        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
+          <button id="copyPerm" class="linklike">复制权限 JSON</button>
+          <button id="openConsole" class="linklike">打开开放平台</button>
+          <span class="hint" id="permHint"></span>
+        </div>
       </div>
     </section>
 
@@ -161,6 +207,18 @@
   </footer>
 
   <script>
+  // 无边框窗口（macOS）才需要给交通灯让位
+  if (navigator.userAgent.includes('Mac')) document.body.classList.add('has-overlay-controls')
+
+  // 独立系统窗口点外面不会关（那是操作系统行为），但键盘关闭是标准做法。
+  // 表单里可能有没保存的输入，所以不做失焦自动关闭。
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' || ((event.metaKey || event.ctrlKey) && event.key === 'w')) {
+      event.preventDefault()
+      window.close()
+    }
+  })
+
     const api = window.bridgeSettings
     const $ = (id) => document.getElementById(id)
     let workspaces = []
@@ -236,6 +294,61 @@
       $('defaultWorkspace').value = config.defaultWorkspace ?? ''
       applyStatus(await api.status())
     }
+
+    // ── 扫码自动配置 ─────────────────────────────────────────────
+    // 扫码成功后主进程已经把凭据落盘、并把扫码人加进白名单，这里重新 load 即可。
+    function setupPhase(running) {
+      $('setupIdle').hidden = running
+      $('setupRunning').hidden = !running
+    }
+
+    api.onRegister((event) => {
+      if (event.phase === 'qr') {
+        setupPhase(true)
+        $('qrImg').src = event.qrDataUrl || ''
+        $('qrImg').style.display = event.qrDataUrl ? '' : 'none'
+        $('qrLink').href = event.url
+        $('setupStep').textContent = '请用飞书扫码，或点下方链接授权'
+      } else if (event.phase === 'polling') {
+        $('setupStep').textContent = '等待你在飞书里确认…'
+      } else if (event.phase === 'slow-down') {
+        $('setupStep').textContent = '飞书要求放慢轮询，仍在等待确认…'
+      } else if (event.phase === 'error') {
+        $('setupStep').textContent = '失败：' + (event.message || '未知错误') + '，可改用手动填写'
+      } else if (event.phase === 'cancelled') {
+        setupPhase(false)
+      }
+    })
+
+    $('scanBtn').onclick = async () => {
+      setupPhase(true)
+      $('setupStep').textContent = '正在获取二维码…'
+      const result = await api.registerStart()
+      setupPhase(false)
+      if (result && result.ok) {
+        await init()
+        $('setupStep').textContent = ''
+        alert('配置完成：应用已创建，凭据与白名单都已填好。\n接下来在飞书里给机器人发一句话即可开始使用。')
+      }
+    }
+    $('scanCancel').onclick = () => { api.registerCancel(); setupPhase(false) }
+    $('qrLink').onclick = (event) => {
+      // 必须走系统默认浏览器：用户的飞书登录态在那里，内置窗口里登录不上
+      event.preventDefault()
+      api.openExternal($('qrLink').href)
+    }
+    $('manualToggle').onclick = () => {
+      $('setup').open = true
+      $('appId').focus()
+    }
+
+    // ── 手填兜底的两个助手 ────────────────────────────────────────
+    $('copyPerm').onclick = async () => {
+      const payload = await api.permissionJson()
+      await navigator.clipboard.writeText(payload.scopes)
+      $('permHint').textContent = '已复制，粘到开放平台「权限管理 → 批量导入/导出权限」；事件订阅勾选 ' + payload.events.join('、')
+    }
+    $('openConsole').onclick = () => { api.openExternal('https://open.feishu.cn/app') }
 
     $('addWorkspace').onclick = () => { workspaces.push({ name: '', path: '' }); renderWorkspaces() }
 

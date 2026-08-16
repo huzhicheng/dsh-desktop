@@ -740,6 +740,7 @@ var skin_default = '/*\n * Skin Studio \u2014\u2014 DeepSeek Harness Web UI \u76
 // src/client/index.ts
 var STORAGE_KEY = "dsh-skin-studio.config";
 var ICON_PUZZLE = "M20.5 11H19V7a2 2 0 0 0-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4a2 2 0 0 0-2 2v3.8h1.5a2.6 2.6 0 0 1 0 5.2H2V20a2 2 0 0 0 2 2h3.8v-1.5a2.6 2.6 0 0 1 5.2 0V22H17a2 2 0 0 0 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z";
+var ICON_REMOTE = "M4 5.5h10a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2zM7 18.5h4M9 14.5v4M17.5 9.5h3a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 16 20v-9a1.5 1.5 0 0 1 1.5-1.5zM19 18.8h.01";
 var ICON_PALETTE = "M12 2a10 10 0 1 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.2 0-1.1.9-2 2-2h2.4A4.6 4.6 0 0 0 22 10.9C22 6 17.5 2 12 2zm-5.5 10a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3.5 2.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z";
 function load() {
   try {
@@ -835,30 +836,6 @@ function openSkinPanel(runtime) {
   mask.appendChild(dialog);
   document.body.appendChild(mask);
 }
-function createTabComponent(runtime) {
-  return function SkinStudioTab() {
-    const host = (0, import_react.useRef)(null);
-    (0, import_react.useEffect)(() => {
-      const container = host.current;
-      if (container === null) return;
-      const panel = createSkinPanel({
-        initial: load(),
-        // 拖动滑块即时看到效果，不必先保存
-        onPreview: (config) => {
-          runtime.apply(config);
-        },
-        onSave: (config) => {
-          save(config);
-        }
-      });
-      container.appendChild(panel);
-      return () => {
-        panel.remove();
-      };
-    }, []);
-    return (0, import_react.createElement)("div", { ref: host });
-  };
-}
 function entryRow(label, iconPath, wide, onClick) {
   const base = {
     flex: "none",
@@ -920,9 +897,13 @@ function entryRow(label, iconPath, wide, onClick) {
     wide ? (0, import_react.createElement)("span", { style: { overflow: "hidden", whiteSpace: "nowrap" } }, label) : null
   );
 }
+function desktopBridge() {
+  return globalThis.dshDesktop;
+}
 function createFooterEntries(runtime) {
   return function FooterEntries(props) {
     const wide = props.wide !== false;
+    const desktop = desktopBridge();
     return (0, import_react.createElement)(
       "div",
       {
@@ -941,6 +922,11 @@ function createFooterEntries(runtime) {
       }),
       entryRow("\u76AE\u80A4", ICON_PALETTE, wide, () => {
         openSkinPanel(runtime);
+      }),
+      // 远程控制是桌面壳的能力（要跑进程、存加密凭据），浏览器里做不了；
+      // 拿不到壳注入的通道时这一项不出现，插件在纯浏览器下照样可用。
+      desktop?.openRemoteControl === void 0 ? null : entryRow("\u8FDC\u7A0B\u63A7\u5236", ICON_REMOTE, wide, () => {
+        desktop.openRemoteControl?.();
       })
     );
   };
@@ -952,12 +938,6 @@ function apply(ctx) {
     runtime.dispose();
   }, "skin-studio: \u76AE\u80A4");
   ctx.inject?.(["slots"], (scoped) => {
-    scoped.slots.inject("settings.plugins.tab", () => scoped.slots.register({
-      name: "settings.plugins.tab",
-      id: "skin-studio",
-      order: 50,
-      label: () => "\u76AE\u80A4"
-    }, createTabComponent(runtime)));
     scoped.slots.inject("sidebar.footer.action", () => scoped.slots.register({
       name: "sidebar.footer.action",
       id: "skin-studio-entries",

@@ -1,0 +1,112 @@
+# 发版流水线：推一个 v* 标签，自动出 macOS 与 Windows 安装包并上传到 Releases。
+#
+# 两个平台必须各自在原生环境构建，不能交叉出包：
+#   - Windows 的 NSIS 卸载器要真正执行一遍 WriteUninstaller 才能生成，
+#     在 macOS 上没有 Wine 时会静默失败，产出「能装不能卸」的包（实测踩过）。
+#   - macOS 的签名与公证只能在 macOS 上做。
+#
+# 上传走 electron-builder 自己的 publish，而不是手工传附件：它会同时生成
+# latest.yml / latest-mac.yml，壳自身的在线升级（electron-updater）靠这两个
+# 文件发现新版本；手工传附件会漏掉它们，自动更新就永远发现不了新版。
+#
+# Release 先落成草稿（electron-builder.yml 里 releaseType: draft），
+# 两个平台都传完后再由人工确认发布。
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  # 不推标签也能手动试跑一次完整流程
+  workflow_dispatch:
+
+# 需要写 Releases 的权限；GITHUB_TOKEN 默认只读
+permissions:
+  contents: write
+
+jobs:
+  # 先做一轮快速校验，省得两个平台各跑十几分钟才发现类型错了
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: 类型检查
+        run: npm run typecheck
+      - name: 构建主进程与渲染层
+        run: npm run build
+      - name: 核对标签与 package.json 版本一致
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "$PKG" ]; then
+            echo "标签 v$TAG 与 package.json 的 $PKG 不一致；改版本号后重新打标签" >&2
+            exit 1
+          fi
+          echo "版本一致：$PKG"
+
+  build:
+    needs: check
+    strategy:
+      # 一个平台失败不影响另一个继续，便于单独重跑
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: macOS (arm64)
+            dist: npx electron-builder --mac --arm64 --publish always
+          - os: windows-latest
+            name: Windows (x64)
+            dist: npx electron-builder --win nsis --x64 --publish always
+    runs-on: ${{ matrix.os }}
+    name: 打包 ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # 内置的官方 Node 运行时约 200MB，缓存掉能省大量时间；
+      # 缓存键带上下载脚本，脚本改了（比如换 Node 大版本）自动失效。
+      - name: 缓存内置 Node 运行时
+        uses: actions/cache@v4
+        with:
+          path: vendor/node
+          key: ${{ runner.os }}-vendor-node-${{ hashFiles('scripts/fetch-node.mjs') }}
+
+      - name: 准备内置 Node 运行时
+        run: npm run prepare:node
+
+      # 种子是当前最新版 Harness，每次发版都重新拉，不缓存
+      - name: 准备种子 Harness
+        run: npm run prepare:seed
+
+      - name: 构建
+        run: npm run build
+
+      - name: 打包并上传到 Releases
+        run: ${{ matrix.dist }}
+        env:
+          # electron-builder 用它创建草稿 Release 并上传产物
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 即使上传 Release 失败，也留一份产物便于排查
+      - name: 留存产物
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ runner.os }}-installers
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/latest*.yml
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,7 +1,7 @@
 /** 启动/错误状态小窗。主窗口在 shell-window.ts。 */
 
 import { join } from 'node:path'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, shell } from 'electron'
 import { APP_DISPLAY_NAME } from './config'
 
 let statusWindow: BrowserWindow | undefined
@@ -62,9 +62,27 @@ export function showBridgeSettings(): void {
       sandbox: true,
     },
   })
+  // 兜底：这个窗口只该显示本地设置页。任何指向外部的跳转或新开窗口
+  // 一律交给系统默认浏览器，避免把第三方登录页装进应用内置窗口。
+  settingsWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  settingsWindow.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith('file://')) return
+    event.preventDefault()
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
+  })
   void settingsWindow.loadFile(join(__dirname, '../settings/settings.html'))
   settingsWindow.once('ready-to-show', () => { settingsWindow?.show() })
   settingsWindow.on('closed', () => { settingsWindow = undefined })
+}
+
+/** 把扫码创建的过程状态推给设置窗口（没开则忽略）。 */
+export function pushBridgeRegister(event: unknown): void {
+  if (settingsWindow !== undefined && !settingsWindow.isDestroyed()) {
+    settingsWindow.webContents.send('bridge:register', event)
+  }
 }
 
 /** 把桥接状态推给设置窗口（没开则忽略）。 */

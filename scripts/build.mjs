@@ -32,7 +32,7 @@ await build({
   sourcemap: 'linked',
 })
 
-for (const name of ['status', 'settings']) {
+for (const name of ['status', 'settings', 'desktop']) {
   await build({
     entryPoints: [join(ROOT, `src/preload/${name}.ts`)],
     outfile: join(DIST, `preload/${name}.js`),
