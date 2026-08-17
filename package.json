@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop",
   "productName": "DSH Desktop",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "DeepSeek Harness 桌面端：免装 Node.js，开箱即用，支持 Harness 在线升级",
   "private": true,
   "main": "dist/main/index.js",

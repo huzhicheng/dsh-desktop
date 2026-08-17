@@ -40,10 +40,12 @@ Grab a build from [Releases](https://github.com/huzhicheng/dsh-desktop/releases)
 
 Files are named `DSH-Desktop-<version>-arm64.dmg` and `DSH-Desktop-Setup-<version>.exe`.
 
-Builds are **unsigned** today, so the OS will stop you the first time:
+Builds are not signed with a paid developer certificate, so the OS will stop you the first time:
 
-- macOS: right-click the icon and choose *Open*, or allow it under *System Settings → Privacy & Security*
-- Windows: on the SmartScreen prompt, click *More info → Run anyway*
+- **macOS**: right-click the icon, choose *Open*, then confirm *Open* in the dialog.
+  If you see "is damaged and can't be opened" (older builds did this), run
+  `xattr -cr "/Applications/DSH Desktop.app"` in Terminal first.
+- **Windows**: on the SmartScreen prompt, click *More info → Run anyway*.
 
 On launch the app starts a local service and loads the UI. The first run unpacks the bundled Harness, so give it a few seconds.
 

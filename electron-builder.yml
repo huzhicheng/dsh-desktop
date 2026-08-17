@@ -11,6 +11,10 @@ files:
 
 npmRebuild: false
 
+# 打包后给 macOS 产物做 ad-hoc 签名。不签的话 Apple Silicon 上会报
+# 「已损坏，无法打开」，且右键「打开」绕不过去（那条路只对「未验证的开发者」有效）。
+afterPack: scripts/adhoc-sign.mjs
+
 mac:
   category: public.app-category.developer-tools
   identity: null
