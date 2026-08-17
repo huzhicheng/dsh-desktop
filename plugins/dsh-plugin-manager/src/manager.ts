@@ -291,7 +291,7 @@ export function openPluginManager(settings: PluginSettingsProvider = {}): void {
     body.appendChild(el('div', { class: 'pm-note' },
       '插件是第三方代码，安装后与 Harness 同权限运行，并可能执行安装脚本。请只安装你信任来源的插件。'))
     const input = el('input', { class: 'pm-input', type: 'text', spellcheck: 'false',
-      placeholder: 'npm 包名，或 github:用户名/仓库名，或本地路径' }) as HTMLInputElement
+      placeholder: '包名、GitHub 地址、本地路径，或整条安装命令' }) as HTMLInputElement
     const install = el('button', { class: 'pm-btn primary', type: 'button' }, '安装')
     const doInstall = (): void => {
       const spec = input.value.trim()

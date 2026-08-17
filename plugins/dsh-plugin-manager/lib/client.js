@@ -294,7 +294,7 @@ function openPluginManager(settings = {}) {
       class: "pm-input",
       type: "text",
       spellcheck: "false",
-      placeholder: "npm \u5305\u540D\uFF0C\u6216 github:\u7528\u6237\u540D/\u4ED3\u5E93\u540D\uFF0C\u6216\u672C\u5730\u8DEF\u5F84"
+      placeholder: "\u5305\u540D\u3001GitHub \u5730\u5740\u3001\u672C\u5730\u8DEF\u5F84\uFF0C\u6216\u6574\u6761\u5B89\u88C5\u547D\u4EE4"
     });
     const install = el("button", { class: "pm-btn primary", type: "button" }, "\u5B89\u88C5");
     const doInstall = () => {

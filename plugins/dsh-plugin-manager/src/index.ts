@@ -132,12 +132,75 @@ function listPlugins(): { profileDir: string; builtin: string[]; installed: Plug
   }
 }
 
-/** 校验安装来源，挡掉会被当成 flag 或注入换行的输入。 */
+/** 带值的选项：从命令里摘包名时，这些选项后面那个词是它的值，要一并跳过。 */
+const VALUE_FLAGS = new Set(['--profile', '-p', '--registry', '--dir', '-C'])
+/** 命令里的动词，它后面才是真正的包名。 */
+const VERBS = new Set(['add', 'install', 'i', 'remove', 'rm', 'uninstall'])
+
+/**
+ * 从一条命令里摘出包名。
+ *
+ * 用户很可能直接把文档里的整行命令粘进来，比如
+ * `dsh plugin --profile web add dsh-browser`，或者 `pnpm add xxx`、`npm i xxx`。
+ * 与其报错让人自己删前缀，不如认出来。
+ *
+ * @returns 摘不出来时返回 undefined，交给调用方按原样处理。
+ */
+function fromCommand(input: string): string | undefined {
+  const tokens = input.split(/\s+/).filter(token => token !== '')
+  if (tokens.length < 2) return undefined
+
+  // 动词之后才是包名；没有动词就不是命令，别乱猜
+  const verbAt = tokens.findIndex(token => VERBS.has(token))
+  if (verbAt < 0) return undefined
+
+  const rest = tokens.slice(verbAt + 1)
+  for (let i = 0; i < rest.length; i += 1) {
+    const token = rest[i] as string
+    if (!token.startsWith('-')) return token
+    // `--profile=web` 自带值；`--profile web` 的值在下一个词
+    if (!token.includes('=') && VALUE_FLAGS.has(token)) i += 1
+  }
+  return undefined
+}
+
+/**
+ * 把各种网页地址折成 pnpm 认识的写法。
+ *
+ * 用户手里最常有的就是浏览器地址栏里那一串，而不是 `github:用户/仓库`
+ * 这种简写。能换算的就换算，换不了的原样返回让后面报真正的错。
+ */
+function fromUrl(input: string): string | undefined {
+  const npm = /^https?:\/\/(?:www\.)?npmjs\.com\/package\/(@?[^/?#]+(?:\/[^/?#]+)?)/.exec(input)
+  if (npm !== null) return npm[1]
+
+  const github = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([^/?#]+)\/([^/?#]+)/.exec(input)
+  if (github !== null) {
+    const owner = github[1] as string
+    // 去掉 .git 后缀；/tree/<分支> 这类路径已被上面的正则截断
+    const repo = (github[2] as string).replace(/\.git$/, '')
+    return `github:${owner}/${repo}`
+  }
+  return undefined
+}
+
+/**
+ * 解析用户填的安装来源。
+ *
+ * 接受四类输入：整条命令、网页地址、包名（可带版本或 scope）、本地路径。
+ * 解析只做「换个等价写法」，真正认不认得由 pnpm 判断——我们不预先否定
+ * 那些自己没见过但 pnpm 支持的写法（git+ssh、tarball 地址等）。
+ *
+ * 安全上仍然挡两样：以 - 开头会被当成命令行选项，换行与空字符能拼出第二条命令。
+ */
 function validateSpec(raw: unknown): string {
-  const spec = String(raw ?? '').trim()
-  if (spec === '') throw new Error('请填写插件来源')
+  const input = String(raw ?? '').trim()
+  if (input === '') throw new Error('请填写插件来源')
+  if (/[\n\r\0]/.test(input)) throw new Error('插件来源不能包含换行')
+
+  const spec = fromCommand(input) ?? fromUrl(input) ?? input
   if (spec.startsWith('-')) throw new Error('插件来源不能以 - 开头')
-  if (/[\n\r\0]/.test(spec)) throw new Error('插件来源包含非法字符')
+  if (/\s/.test(spec)) throw new Error(`没看懂「${input}」，请填包名、仓库地址或本地路径`)
   return spec
 }
 

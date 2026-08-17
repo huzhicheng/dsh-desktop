@@ -36,7 +36,10 @@ async function main() {
   // 用 npm pack 取 tarball 再解，比 npm install 干净：不产生 node_modules、
   // 不跑生命周期脚本，拿到的就是发布产物本身
   process.stdout.write('正在下载 pnpm …\n')
-  const packed = execFileSync('npm', ['pack', 'pnpm@latest', '--pack-destination', staging], {
+  // Windows 上 npm 是 npm.cmd，execFileSync 不走 shell 会直接 ENOENT，
+  // 所以显式带上扩展名（CI 上实测踩过）
+  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+  const packed = execFileSync(npm, ['pack', 'pnpm@latest', '--pack-destination', staging], {
     cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'],
   }).trim().split('\n').pop()
   execFileSync('tar', ['-xzf', join(staging, packed), '-C', staging], { stdio: 'inherit' })

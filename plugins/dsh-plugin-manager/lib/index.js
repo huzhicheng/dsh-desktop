@@ -64,11 +64,39 @@ function listPlugins() {
     installed
   };
 }
+var VALUE_FLAGS = /* @__PURE__ */ new Set(["--profile", "-p", "--registry", "--dir", "-C"]);
+var VERBS = /* @__PURE__ */ new Set(["add", "install", "i", "remove", "rm", "uninstall"]);
+function fromCommand(input) {
+  const tokens = input.split(/\s+/).filter((token) => token !== "");
+  if (tokens.length < 2) return void 0;
+  const verbAt = tokens.findIndex((token) => VERBS.has(token));
+  if (verbAt < 0) return void 0;
+  const rest = tokens.slice(verbAt + 1);
+  for (let i = 0; i < rest.length; i += 1) {
+    const token = rest[i];
+    if (!token.startsWith("-")) return token;
+    if (!token.includes("=") && VALUE_FLAGS.has(token)) i += 1;
+  }
+  return void 0;
+}
+function fromUrl(input) {
+  const npm = /^https?:\/\/(?:www\.)?npmjs\.com\/package\/(@?[^/?#]+(?:\/[^/?#]+)?)/.exec(input);
+  if (npm !== null) return npm[1];
+  const github = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([^/?#]+)\/([^/?#]+)/.exec(input);
+  if (github !== null) {
+    const owner = github[1];
+    const repo = github[2].replace(/\.git$/, "");
+    return `github:${owner}/${repo}`;
+  }
+  return void 0;
+}
 function validateSpec(raw) {
-  const spec = String(raw ?? "").trim();
-  if (spec === "") throw new Error("\u8BF7\u586B\u5199\u63D2\u4EF6\u6765\u6E90");
+  const input = String(raw ?? "").trim();
+  if (input === "") throw new Error("\u8BF7\u586B\u5199\u63D2\u4EF6\u6765\u6E90");
+  if (/[\n\r\0]/.test(input)) throw new Error("\u63D2\u4EF6\u6765\u6E90\u4E0D\u80FD\u5305\u542B\u6362\u884C");
+  const spec = fromCommand(input) ?? fromUrl(input) ?? input;
   if (spec.startsWith("-")) throw new Error("\u63D2\u4EF6\u6765\u6E90\u4E0D\u80FD\u4EE5 - \u5F00\u5934");
-  if (/[\n\r\0]/.test(spec)) throw new Error("\u63D2\u4EF6\u6765\u6E90\u5305\u542B\u975E\u6CD5\u5B57\u7B26");
+  if (/\s/.test(spec)) throw new Error(`\u6CA1\u770B\u61C2\u300C${input}\u300D\uFF0C\u8BF7\u586B\u5305\u540D\u3001\u4ED3\u5E93\u5730\u5740\u6216\u672C\u5730\u8DEF\u5F84`);
   return spec;
 }
 async function runPluginCommand(args) {
