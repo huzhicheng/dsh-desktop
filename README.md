@@ -31,23 +31,40 @@
 
 ## 安装
 
-到 [Releases](https://github.com/huzhicheng/dsh-desktop/releases) 下载：
+### macOS（Apple Silicon）
 
-| 平台 | 下载 |
-| --- | --- |
-| macOS（Apple Silicon） | [**下载 .dmg**](https://github.com/huzhicheng/dsh-desktop/releases/latest) |
-| Windows 11（x64） | [**下载 .exe**](https://github.com/huzhicheng/dsh-desktop/releases/latest) |
+**第一步** 到 [Releases](https://github.com/huzhicheng/dsh-desktop/releases/latest) 下载 `DSH-Desktop-<版本>-arm64.dmg`
 
-文件名形如 `DSH-Desktop-<版本>-arm64.dmg` 与 `DSH-Desktop-Setup-<版本>.exe`。
+**第二步** 打开 dmg，把 **DSH Desktop** 拖进「应用程序」
 
-安装包没有购买开发者证书，首次打开会被系统拦一下：
+**第三步** 打开「终端」，粘贴执行这一行：
 
-- **macOS**：右键点图标选「打开」，在弹窗里再点一次「打开」。
-  若提示「已损坏，无法打开」（旧版本会这样），在终端执行
-  `xattr -cr "/Applications/DSH Desktop.app"` 后再打开。
-- **Windows**：SmartScreen 提示「未知发布者」时点「更多信息 → 仍要运行」。
+```sh
+xattr -cr "/Applications/DSH Desktop.app"
+```
 
-打开后应用会自己起本地服务并载入界面，第一次启动需要解压内置的 Harness，稍等几秒。
+> [!IMPORTANT]
+> 第三步不能跳过。macOS 会给所有从网上下载的文件打一个「隔离」标记，而本应用
+> 没有购买 Apple 开发者证书，带着这个标记会被系统拦下、提示**「已损坏，无法打开」**。
+> 它不是真的损坏，上面这行命令就是清掉那个标记。
+>
+> 这个提示**用右键「打开」绕不过去**，只能用这行命令。
+
+**第四步** 双击打开。若提示「未验证的开发者」，右键点图标选「打开」，在弹窗里再点一次「打开」（只需一次，之后正常双击即可）
+
+### Windows 11（x64）
+
+**第一步** 到 [Releases](https://github.com/huzhicheng/dsh-desktop/releases/latest) 下载 `DSH-Desktop-Setup-<版本>.exe`
+
+**第二步** 双击运行。SmartScreen 弹出「Windows 已保护你的电脑」时，点**「更多信息」**，再点**「仍要运行」**
+
+**第三步** 按提示选安装目录，装完即可打开
+
+### 装好之后
+
+第一次启动要解压内置的 Harness，等几秒；界面出来后左下角会有**插件 / 皮肤 / 远程控制 / 设置**四个入口。
+
+需要填一次 DeepSeek 的 API Key 才能开始对话。
 
 ## 换肤
 

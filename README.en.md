@@ -31,21 +31,41 @@ Runs on macOS (Apple Silicon) and Windows 11 (x64).
 
 ## Install
 
-Grab a build from [Releases](https://github.com/huzhicheng/dsh-desktop/releases):
+### macOS (Apple Silicon)
 
-| Platform | Download |
-| --- | --- |
-| macOS (Apple Silicon) | [**Get the .dmg**](https://github.com/huzhicheng/dsh-desktop/releases/latest) |
-| Windows 11 (x64) | [**Get the .exe**](https://github.com/huzhicheng/dsh-desktop/releases/latest) |
+**Step 1** — download `DSH-Desktop-<version>-arm64.dmg` from [Releases](https://github.com/huzhicheng/dsh-desktop/releases/latest)
 
-Files are named `DSH-Desktop-<version>-arm64.dmg` and `DSH-Desktop-Setup-<version>.exe`.
+**Step 2** — open the dmg and drag **DSH Desktop** into Applications
 
-Builds are not signed with a paid developer certificate, so the OS will stop you the first time:
+**Step 3** — open Terminal and run this line:
 
-- **macOS**: right-click the icon, choose *Open*, then confirm *Open* in the dialog.
-  If you see "is damaged and can't be opened" (older builds did this), run
-  `xattr -cr "/Applications/DSH Desktop.app"` in Terminal first.
-- **Windows**: on the SmartScreen prompt, click *More info → Run anyway*.
+```sh
+xattr -cr "/Applications/DSH Desktop.app"
+```
+
+> [!IMPORTANT]
+> Do not skip step 3. macOS quarantines everything downloaded from the web, and
+> because this app is not signed with a paid Apple developer certificate, that
+> quarantine flag makes the system refuse it with **"is damaged and can't be opened"**.
+> Nothing is actually damaged — the command above just clears the flag.
+>
+> That particular warning **cannot be bypassed by right-click → Open**. The command is the only way.
+
+**Step 4** — double-click to launch. If you get "unidentified developer", right-click the icon, choose *Open*, then confirm *Open* (once only; after that a normal double-click works)
+
+### Windows 11 (x64)
+
+**Step 1** — download `DSH-Desktop-Setup-<version>.exe` from [Releases](https://github.com/huzhicheng/dsh-desktop/releases/latest)
+
+**Step 2** — run it. When SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway**
+
+**Step 3** — pick an install location and finish
+
+### After installing
+
+The first launch unpacks the bundled Harness, so give it a few seconds. Once the UI loads you'll find four entries in the lower left: **插件 (Plugins) / 皮肤 (Skin) / 远程控制 (Remote control) / 设置 (Settings)**.
+
+You'll need to enter a DeepSeek API key once before you can start a conversation.
 
 On launch the app starts a local service and loads the UI. The first run unpacks the bundled Harness, so give it a few seconds.
 
