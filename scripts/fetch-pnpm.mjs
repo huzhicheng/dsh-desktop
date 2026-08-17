@@ -13,7 +13,7 @@
  * 用法：node scripts/fetch-pnpm.mjs
  */
 import { execFileSync } from 'node:child_process'
-import { cp, mkdir, readFile, rm } from 'node:fs/promises'
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
@@ -33,16 +33,26 @@ async function main() {
   await rm(staging, { recursive: true, force: true })
   await mkdir(staging, { recursive: true })
 
-  // 用 npm pack 取 tarball 再解，比 npm install 干净：不产生 node_modules、
-  // 不跑生命周期脚本，拿到的就是发布产物本身
+  /*
+   * 直接问 registry 要 tarball，不经过 npm 命令。
+   *
+   * 试过 `npm pack`，两个平台各挂一次：Windows 上 npm 是 npm.cmd，
+   * execFileSync 不带扩展名报 ENOENT；带上扩展名之后，Node 20 起出于安全
+   * 考虑禁止不经 shell 直接 spawn .cmd/.bat，又变成 EINVAL。与其为它加
+   * shell 并处理引号转义，不如省掉这层依赖——registry 的接口两个平台一样。
+   */
   process.stdout.write('正在下载 pnpm …\n')
-  // Windows 上 npm 是 npm.cmd，execFileSync 不走 shell 会直接 ENOENT，
-  // 所以显式带上扩展名（CI 上实测踩过）
-  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-  const packed = execFileSync(npm, ['pack', 'pnpm@latest', '--pack-destination', staging], {
-    cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'],
-  }).trim().split('\n').pop()
-  execFileSync('tar', ['-xzf', join(staging, packed), '-C', staging], { stdio: 'inherit' })
+  const meta = await (await fetch('https://registry.npmjs.org/pnpm/latest')).json()
+  const url = meta?.dist?.tarball
+  if (typeof url !== 'string') throw new Error('registry 未返回 pnpm 的 tarball 地址')
+
+  const tarball = join(staging, 'pnpm.tgz')
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`下载 pnpm 失败：HTTP ${response.status}`)
+  await writeFile(tarball, Buffer.from(await response.arrayBuffer()))
+
+  // tar 在 macOS 与 Windows 10+ 都是真正的可执行文件，不是 shell 内建
+  execFileSync('tar', ['-xzf', tarball, '-C', staging], { stdio: 'inherit' })
 
   await rm(TARGET, { recursive: true, force: true })
   await mkdir(join(ROOT, 'vendor'), { recursive: true })
@@ -54,7 +64,7 @@ async function main() {
   if (!existsSync(join(TARGET, 'bin/pnpm.cjs'))) {
     throw new Error('pnpm 产物缺少 bin/pnpm.cjs，包结构可能变了')
   }
-  process.stdout.write(`pnpm ${manifest.version} 已放入 vendor/pnpm\n`)
+  process.stdout.write(`pnpm ${manifest.version} 已放入 vendor/pnpm（${meta.version}）\n`)
 }
 
 main().catch((error) => {
