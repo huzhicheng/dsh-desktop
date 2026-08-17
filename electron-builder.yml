@@ -22,6 +22,11 @@ mac:
     - target: zip
       arch: [arm64]
   extraResources:
+    # 随包分发的 pnpm。dsh 的插件安装命令是 pnpm 转发器，而 corepack 首次
+    # 使用要联网下载真正的 pnpm——全新机器上因此一个插件都装不上。
+    # 只带运行必需的部分，artifacts/ 是独立可执行版才用的原生二进制，已剔除。
+    - from: vendor/pnpm
+      to: pnpm
     # 随包分发的三个插件（插件管理 / 皮肤 / 远程控制）。
     # 侧栏那三个入口全靠它们提供，不打进来用户装完是空的。
     # 只带运行必需的三样，源码与 node_modules 不进包。
@@ -60,6 +65,11 @@ win:
     - target: zip
       arch: [x64]
   extraResources:
+    # 随包分发的 pnpm。dsh 的插件安装命令是 pnpm 转发器，而 corepack 首次
+    # 使用要联网下载真正的 pnpm——全新机器上因此一个插件都装不上。
+    # 只带运行必需的部分，artifacts/ 是独立可执行版才用的原生二进制，已剔除。
+    - from: vendor/pnpm
+      to: pnpm
     # 随包分发的三个插件（插件管理 / 皮肤 / 远程控制）。
     # 侧栏那三个入口全靠它们提供，不打进来用户装完是空的。
     # 只带运行必需的三样，源码与 node_modules 不进包。

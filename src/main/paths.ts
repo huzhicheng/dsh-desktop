@@ -45,6 +45,19 @@ export function bundledCorepackCli(): string {
 }
 
 /** 我们自己生成的 pnpm 包装脚本所在目录（不用符号链接，Windows 也安全）。 */
+/**
+ * 随包分发的 pnpm 入口。
+ *
+ * 不走 corepack：corepack 只是转发器，首次执行会去 registry 下载真正的 pnpm。
+ * 开发机早就缓存过所以一直没暴露，全新用户机器上这一步要联网，装插件因此失败。
+ */
+export function bundledPnpmCli(): string {
+  const base = app.isPackaged
+    ? join(process.resourcesPath, 'pnpm')
+    : join(DEV_ROOT, 'vendor/pnpm')
+  return join(base, 'bin/pnpm.cjs')
+}
+
 export function pnpmShimDir(): string {
   return join(dataRoot(), 'pnpm-shim')
 }

@@ -115,6 +115,10 @@ jobs:
       - name: 准备内置 Node 运行时
         run: npm run prepare:node
 
+      # 随包分发的 pnpm：不带它，用户机器上首次装插件要联网走 corepack 下载
+      - name: 准备内置 pnpm
+        run: npm run prepare:pnpm
+
       # 种子是当前最新版 Harness，每次发版都重新拉，不缓存
       - name: 准备种子 Harness
         run: npm run prepare:seed

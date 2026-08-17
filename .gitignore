@@ -8,3 +8,4 @@ vendor/seed/
 
 # 插件间共用 esbuild 的软链，不进仓库
 plugins/*/node_modules
+vendor/pnpm/
