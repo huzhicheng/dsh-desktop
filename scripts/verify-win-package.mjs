@@ -13,6 +13,8 @@ const required = [
   'resources/node/node_modules/corepack/dist/corepack.js',
   'resources/seed/runtime.tar.gz',
   'resources/seed/seed.json',
+  'resources/trayIcon.png',
+  'resources/trayIcon@2x.png',
   // 随包分发的 pnpm：没有它，用户机器上装插件要联网走 corepack 下载
   'resources/pnpm/bin/pnpm.cjs',
   'resources/pnpm/package.json',
@@ -34,4 +36,4 @@ if (missing.length > 0) {
   process.exit(1)
 }
 
-console.log('Windows 包关键资源检查通过（Node、npm、corepack、种子运行时、pnpm、三个内置插件均完整）。')
+console.log('Windows 包关键资源检查通过（Node、npm、corepack、种子运行时、pnpm、三个内置插件、托盘 Logo 均完整）。')

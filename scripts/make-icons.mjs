@@ -9,6 +9,7 @@
  *   build/icon.png                        1024px，electron-builder 据此
  *                                         自动派生 macOS 的 .icns 与 Windows 的 .ico
  *   resources/trayTemplate.png / @2x.png  菜单栏图标
+ *   resources/trayIcon.png / @2x.png      Windows 彩色托盘图标
  *
  * 位图缩放走 Electron 自带的 nativeImage，不引入 sharp/PIL：应用本来就带
  * Electron，不必为出图多一个原生依赖，而且 resize 给的是精确像素，
@@ -71,7 +72,16 @@ async function main() {
     )
   }
 
-  process.stdout.write('图标已生成：build/icon.png、resources/trayTemplate.png(@2x)\n')
+  // Windows 通知区域不支持 macOS 的模板图机制，直接使用彩色产品 Logo。
+  // 基础图给 32px，适配虚拟机常见的 200% 缩放；@2x 留给更高 DPI 屏幕。
+  for (const [size, name] of [[32, 'trayIcon.png'], [64, 'trayIcon@2x.png']]) {
+    await writeFile(
+      join(ROOT, 'resources', name),
+      logo.resize({ width: size, height: size, quality: 'best' }).toPNG(),
+    )
+  }
+
+  process.stdout.write('图标已生成：build/icon.png、resources/trayTemplate.png(@2x)、resources/trayIcon.png(@2x)\n')
 }
 
 // 离屏窗口销毁后不要让 Electron 走默认的自动退出：那会在剩余写入

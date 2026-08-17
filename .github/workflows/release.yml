@@ -132,6 +132,12 @@ jobs:
           # electron-builder 用它创建草稿 Release 并上传产物
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # 校验脚本原本只挂在 npm run dist:win 上，而 CI 是直接调 electron-builder，
+      # 于是它在真正出包的路径上一次都没跑过——内置资源掉了也不会被拦住
+      - name: 校验 Windows 包内资源完整
+        if: runner.os == 'Windows'
+        run: node scripts/verify-win-package.mjs
+
       # 即使上传 Release 失败，也留一份产物便于排查
       - name: 留存产物
         if: always()

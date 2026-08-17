@@ -1,4 +1,4 @@
-/** 系统托盘：常驻入口，展示版本、触发升级检查、退出。图标为运行时绘制的模板图。 */
+/** 系统托盘：常驻入口，展示版本、触发升级检查、退出。 */
 
 import { join } from 'node:path'
 import { Menu, Tray, app, nativeImage } from 'electron'
@@ -21,19 +21,21 @@ export interface TrayDeps {
 let tray: Tray | undefined
 
 /**
- * 菜单栏图标：读 resources/trayTemplate.png（由 npm run icons 从 assets/tray.svg 生成）。
+ * 托盘图标由 `npm run icons` 生成。
  *
  * macOS 要求菜单栏图标是「模板图」（纯黑 + 透明），系统据此自动适配深浅色，
  * 所以这里用的是单色鲸鱼剪影而不是彩色 logo——那张插画缩到 16pt 会糊成色块。
- * Windows 没有模板图机制，同一张黑色剪影在浅色任务栏上也清晰。
+ * Windows 没有模板图机制，且黑色剪影在深色任务栏上几乎不可见，所以单独使用
+ * 32px 彩色产品 Logo；Windows 会按当前 DPI 缩到通知区域的实际尺寸。
  *
  * 取不到文件时退回空图：宁可菜单栏图标是空的，也不该让托盘创建失败、
  * 导致用户连退出菜单都没有。
  */
 function trayIcon(): Electron.NativeImage {
+  const name = process.platform === 'win32' ? 'trayIcon.png' : 'trayTemplate.png'
   const file = app.isPackaged
-    ? join(process.resourcesPath, 'trayTemplate.png')
-    : join(__dirname, '../../resources/trayTemplate.png')
+    ? join(process.resourcesPath, name)
+    : join(__dirname, '../../resources', name)
   const image = nativeImage.createFromPath(file)
   if (image.isEmpty()) {
     log.warn(`菜单栏图标缺失：${file}`)

@@ -102,7 +102,7 @@ node "%NODE_HOME%\node_modules\npm\bin\npm-cli.js" run dist:win
 构建成功后会看到：
 
 ```text
-Windows 包关键资源检查通过（Node、npm、corepack、种子运行时、三个内置插件均完整）。
+Windows 包关键资源检查通过（Node、npm、corepack、种子运行时、pnpm、三个内置插件、托盘 Logo 均完整）。
 ```
 
 安装包位于：
@@ -123,6 +123,7 @@ electron-updater 时使用。
 - Harness 种子运行时和清单
 - 随包 pnpm
 - 插件管理、皮肤、远程控制三个内置插件的 package.json 与浏览器端代码
+- Windows 通知区域使用的彩色托盘 Logo
 
 ## 五、在虚拟机中安装和启动验证
 
@@ -152,12 +153,16 @@ Test-Path "$app\resources\node\node_modules\npm\bin\npm-cli.js"
 Test-Path "$app\resources\node\node_modules\corepack\dist\corepack.js"
 Test-Path "$app\resources\pnpm\bin\pnpm.cjs"
 Test-Path "$app\resources\seed\runtime.tar.gz"
+Test-Path "$app\resources\trayIcon.png"
 Test-Path "$app\resources\plugins\dsh-plugin-manager\lib\client.js"
 Test-Path "$app\resources\plugins\dsh-plugin-remote-control\lib\client.js"
 Test-Path "$app\resources\plugins\dsh-plugin-skin-studio\lib\client.js"
 ```
 
 所有结果都应为 `True`。
+
+关闭主窗口后应用仍会留在通知区域。展开任务栏右下角的隐藏图标，应能看到彩色的
+DSH 产品 Logo；蓝色盾牌加黄色感叹号是 Windows 安全中心的系统图标，并非 DSH。
 
 ### 3. 首次启动
 
