@@ -19,6 +19,7 @@ import { APP_DISPLAY_NAME } from './config'
 import { createHarnessService } from './harness-service'
 import { initLogger, log } from './logger'
 import { assertBundledToolchain, harnessEntry, logsDir } from './paths'
+import { skipWelcomeNotice } from './onboarding'
 import { ensureBundledPlugins, writePluginsReadme } from './plugin-bootstrap'
 import { ensurePnpmShim } from './pnpm-shim'
 import { ensureSeedInstalled, readCurrent, rollback } from './runtime-store'
@@ -189,6 +190,8 @@ async function boot(): Promise<void> {
   })
   await writePluginsReadme()
   await ensureBundledPlugins(state.version)
+  // dsh 的首次运行内测声明是说给它自己的开发者受众听的，桌面端用户不该被它拦一下
+  await skipWelcomeNotice(state.version)
 
   pushStatus({
     stage: 'starting',
