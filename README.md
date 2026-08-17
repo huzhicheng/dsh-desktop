@@ -33,10 +33,12 @@
 
 到 [Releases](https://github.com/huzhicheng/dsh-desktop/releases) 下载：
 
-| 平台 | 文件 |
+| 平台 | 下载 |
 | --- | --- |
-| macOS | `DSH Desktop-<版本>-arm64.dmg` |
-| Windows 11 | `DSH Desktop Setup <版本>.exe` |
+| macOS（Apple Silicon） | [**下载 .dmg**](https://github.com/huzhicheng/dsh-desktop/releases/latest) |
+| Windows 11（x64） | [**下载 .exe**](https://github.com/huzhicheng/dsh-desktop/releases/latest) |
+
+文件名形如 `DSH-Desktop-<版本>-arm64.dmg` 与 `DSH-Desktop-Setup-<版本>.exe`。
 
 安装包目前**未签名**，首次打开会被系统拦一下：
 

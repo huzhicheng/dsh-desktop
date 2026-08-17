@@ -13,6 +13,15 @@ const required = [
   'resources/node/node_modules/corepack/dist/corepack.js',
   'resources/seed/runtime.tar.gz',
   'resources/seed/seed.json',
+  // 随包分发的 pnpm：没有它，用户机器上装插件要联网走 corepack 下载
+  'resources/pnpm/bin/pnpm.cjs',
+  'resources/pnpm/package.json',
+  'resources/plugins/dsh-plugin-manager/package.json',
+  'resources/plugins/dsh-plugin-manager/lib/client.js',
+  'resources/plugins/dsh-plugin-remote-control/package.json',
+  'resources/plugins/dsh-plugin-remote-control/lib/client.js',
+  'resources/plugins/dsh-plugin-skin-studio/package.json',
+  'resources/plugins/dsh-plugin-skin-studio/lib/client.js',
 ]
 
 const missing = required.filter((relative) => {
@@ -25,4 +34,4 @@ if (missing.length > 0) {
   process.exit(1)
 }
 
-console.log('Windows 包关键资源检查通过（Node、npm、corepack、种子运行时均完整）。')
+console.log('Windows 包关键资源检查通过（Node、npm、corepack、种子运行时、pnpm、三个内置插件均完整）。')

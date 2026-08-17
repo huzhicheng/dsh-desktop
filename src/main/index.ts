@@ -188,8 +188,12 @@ async function boot(): Promise<void> {
     message: '正在准备内置插件…',
     detail: '插件已随安装包分发，这一步在本机完成，不会联网下载。',
   })
-  await writePluginsReadme()
-  await ensureBundledPlugins(state.version)
+  try {
+    await writePluginsReadme()
+    await ensureBundledPlugins(state.version)
+  } catch (error) {
+    return fatal('内置插件初始化失败', error instanceof Error ? error.message : String(error))
+  }
   // dsh 的首次运行内测声明是说给它自己的开发者受众听的，桌面端用户不该被它拦一下
   await skipWelcomeNotice(state.version)
 

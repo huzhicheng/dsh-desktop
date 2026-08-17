@@ -18,10 +18,12 @@
 import { spawn } from 'node:child_process'
 import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { delimiter, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { app } from 'electron'
 import { log } from './logger'
-import { bundledNode, bundledNodePathEntry, dataRoot, dshHome, harnessEntry, pnpmShimDir } from './paths'
+import {
+  bundledNode, bundledNodePathEntry, dataRoot, harnessEntry, pnpmShimDir, profileDir,
+} from './paths'
 
 /** profile 名，与 `dsh web` 使用的一致。 */
 const PROFILE = 'web'
@@ -35,21 +37,64 @@ function bundledPluginsDir(): string {
     : join(app.getAppPath(), 'plugins')
 }
 
-/** 插件副本落在用户数据目录下，profile 里的链接指向这里。 */
+/**
+ * 插件副本放进 profile 自己的隐藏目录。
+ *
+ * 这里刻意不用 Electron 的 userData（Windows 默认是
+ * `AppData\\Roaming\\DSH Desktop`）。dsh 0.1.0-rc.6 在 Windows 上用 shell
+ * 转发 pnpm 参数，绝对路径里的空格会被拆开，最终把依赖写成坏掉的
+ * `link:Desktop\\plugins\\...`。传给 pnpm 的 profile 内相对路径不含空格，用户目录
+ * 本身即使有空格也不会受影响。
+ */
 function installedPluginsDir(): string {
-  return join(dataRoot(), 'plugins')
+  return join(profileDir(PROFILE), '.dsh-desktop-plugins')
 }
 
-/** 读 profile 已声明的依赖，判断哪些还没装。 */
-async function installedNames(): Promise<Set<string>> {
+interface ProfileManifest {
+  dependencies?: Record<string, string>
+  dsh?: { profile?: { bundles?: string[] } }
+}
+
+async function readProfileManifest(): Promise<ProfileManifest | undefined> {
   try {
-    const raw = await readFile(join(dshHome(), 'profiles', PROFILE, 'package.json'), 'utf8')
-    const manifest = JSON.parse(raw) as { dependencies?: Record<string, string> }
-    return new Set(Object.keys(manifest.dependencies ?? {}))
+    const raw = await readFile(join(profileDir(PROFILE), 'package.json'), 'utf8')
+    return JSON.parse(raw) as ProfileManifest
   } catch {
-    // profile 还不存在（全新用户）——一个都没装
-    return new Set()
+    return undefined
   }
+}
+
+/** pnpm 看到的是相对于 profile 的 link: 路径，整个参数不含空格。 */
+function pluginSpec(name: string): string {
+  // 必须是 link:，不能是 file:；应用升级覆盖副本后，profile 要立刻读取新代码，
+  // 不能继续使用 pnpm 存进内容寻址仓库的旧快照。
+  return `link:.dsh-desktop-plugins/${name}`
+}
+
+/**
+ * 不能只检查 dependencies 里有没有名字：0.2.1 正是因此把三个坏链接误判成
+ * 已安装。依赖必须指向本应用维护的副本、node_modules 能解析，并且 bundle 已启用。
+ */
+function pluginReady(name: string, manifest: ProfileManifest | undefined): boolean {
+  const spec = manifest?.dependencies?.[name]?.replaceAll('\\', '/')
+  const expectedSuffix = `.dsh-desktop-plugins/${name}`
+  const usesBundledCopy = spec?.endsWith(expectedSuffix) === true
+  const resolves = existsSync(join(profileDir(PROFILE), 'node_modules', name, 'package.json'))
+  const enabled = manifest?.dsh?.profile?.bundles?.includes(name) === true
+  return usesBundledCopy && resolves && enabled
+}
+
+/**
+ * 0.2.1 的带空格绝对路径被 Windows shell 拆成了两个 pnpm 参数，除三个坏掉的
+ * Desktop\\plugins 链接外，还会多出一个名为 `DSH` 的半截路径依赖。只匹配本应用
+ * 旧 userData 路径且目标确实不存在时才清理，避免误删用户自己安装的同名包。
+ */
+function hasLegacySplitDependency(manifest: ProfileManifest | undefined): boolean {
+  if (process.platform !== 'win32') return false
+  const spec = manifest?.dependencies?.DSH?.replaceAll('\\', '/').toLowerCase()
+  const target = join(dirname(dataRoot()), 'DSH')
+  const expected = `link:${target.replaceAll('\\', '/')}`.toLowerCase()
+  return spec === expected && !existsSync(join(target, 'package.json'))
 }
 
 /** 列出随包分发的插件目录名；只认带 package.json 的。 */
@@ -63,11 +108,11 @@ async function bundledPlugins(): Promise<string[]> {
     .map(entry => entry.name)
 }
 
-/** 转发一次 `dsh plugin --profile web add <路径>`。 */
-async function runAdd(runtimeVersion: string, pluginPath: string): Promise<void> {
+/** 转发一次 `dsh plugin --profile web <pnpm 参数...>`。 */
+async function runPluginCommand(runtimeVersion: string, args: string[]): Promise<void> {
   const entry = harnessEntry(runtimeVersion)
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(bundledNode(), [entry, 'plugin', '--profile', PROFILE, 'add', pluginPath], {
+    const child = spawn(bundledNode(), [entry, 'plugin', '--profile', PROFILE, ...args], {
       cwd: dataRoot(),
       // pnpm 由内置 Node 带的 corepack 提供，得让它在 PATH 里找得到
       env: {
@@ -97,39 +142,54 @@ async function runAdd(runtimeVersion: string, pluginPath: string): Promise<void>
   })
 }
 
+async function runAdd(runtimeVersion: string, names: string[]): Promise<void> {
+  await runPluginCommand(runtimeVersion, ['add', ...names.map(pluginSpec)])
+}
+
 /**
  * 确保随包分发的插件都装好了。
  *
  * 必须在启动 `dsh web` 之前调用——profile 是在 dsh 启动时读的，装晚了要等下次重启。
- * 失败不抛：插件装不上只是少几个入口，主界面照样能用，不该因此拦住启动。
+ * 插件装不上会抛错，由启动流程明确提示用户。静默打开一个缺少三个主入口的界面
+ * 会让坏安装被误认为正常安装，且后续启动也无法自愈。
  *
  * @param runtimeVersion - 当前运行时版本，用来定位 dsh 入口。
  */
 export async function ensureBundledPlugins(runtimeVersion: string): Promise<void> {
-  const names = await bundledPlugins()
-  if (names.length === 0) return
+  const names = (await bundledPlugins()).sort()
+  if (names.length === 0) throw new Error(`安装包中没有找到内置插件：${bundledPluginsDir()}`)
 
   const source = bundledPluginsDir()
   const target = installedPluginsDir()
   await mkdir(target, { recursive: true })
 
-  const already = await installedNames()
+  // 先把全部副本准备好，再用一次 pnpm add 同时修复全部依赖。旧版留下的三个坏
+  // link: 互相依赖；逐个修时，pnpm 会先因另外两个目标不存在而失败。
   for (const name of names) {
-    try {
-      // 每次启动都覆盖一遍副本：壳升级后插件代码也要跟着换，
-      // 而 profile 里是链接，副本一换就生效，不必重新执行安装
-      const dest = join(target, name)
-      await rm(dest, { recursive: true, force: true })
-      await cp(join(source, name), dest, { recursive: true })
-
-      if (already.has(name)) continue
-      log.info(`正在安装内置插件 ${name} …`)
-      await runAdd(runtimeVersion, dest)
-      log.info(`内置插件 ${name} 已安装并启用`)
-    } catch (error) {
-      log.warn(`内置插件 ${name} 安装失败：`, error instanceof Error ? error.message : String(error))
-    }
+    const dest = join(target, name)
+    await rm(dest, { recursive: true, force: true })
+    await cp(join(source, name), dest, { recursive: true })
   }
+
+  let manifest = await readProfileManifest()
+  const needsRepair = names.filter(name => !pluginReady(name, manifest))
+  if (needsRepair.length > 0) {
+    log.info(`正在安装或修复内置插件：${names.join('、')} …`)
+    await runAdd(runtimeVersion, names)
+    manifest = await readProfileManifest()
+  }
+
+  if (hasLegacySplitDependency(manifest)) {
+    log.info('正在清理旧版本遗留的无效 DSH 插件链接…')
+    await runPluginCommand(runtimeVersion, ['remove', 'DSH'])
+    manifest = await readProfileManifest()
+  }
+
+  const broken = names.filter(name => !pluginReady(name, manifest))
+  if (broken.length > 0) {
+    throw new Error(`插件安装命令结束后仍未正确启用：${broken.join('、')}`)
+  }
+  log.info(`内置插件已就绪：${names.join('、')}`)
 }
 
 /** 供设置界面显示：随包分发的插件清单。 */

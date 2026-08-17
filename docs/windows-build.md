@@ -32,12 +32,13 @@ npm run prepare:win
 vendor/node/win32-x64/node.exe
 vendor/node/win32-x64/node_modules/npm/bin/npm-cli.js
 vendor/node/win32-x64/node_modules/corepack/dist/corepack.js
+vendor/pnpm/bin/pnpm.cjs
 vendor/seed/win32-x64/runtime.tar.gz
 vendor/seed/win32-x64/seed.json
 ```
 
-其中 npm 用于 Harness 在线升级，Corepack 用于提供 pnpm、安装 Harness 插件；两者都
-不能从安装包中遗漏。
+其中 npm 用于 Harness 在线升级，随包 pnpm 用于离线安装三个内置插件，Corepack 是
+pnpm 缺失时的联网兜底；这些文件都不能从安装包中遗漏。
 
 ## 二、把源码复制到 Windows 本地磁盘
 
@@ -101,13 +102,13 @@ node "%NODE_HOME%\node_modules\npm\bin\npm-cli.js" run dist:win
 构建成功后会看到：
 
 ```text
-Windows 包关键资源检查通过（Node、npm、corepack、种子运行时均完整）。
+Windows 包关键资源检查通过（Node、npm、corepack、种子运行时、三个内置插件均完整）。
 ```
 
 安装包位于：
 
 ```text
-C:\dsh-win-build\release\DSH Desktop Setup 0.1.0.exe
+C:\dsh-win-build\release\DSH Desktop Setup <版本>.exe
 ```
 
 文件名中的版本号来自根目录 `package.json`。构建脚本还会生成 `.blockmap`，供以后接入
@@ -120,6 +121,8 @@ electron-updater 时使用。
 - npm CLI
 - Corepack CLI
 - Harness 种子运行时和清单
+- 随包 pnpm
+- 插件管理、皮肤、远程控制三个内置插件的 package.json 与浏览器端代码
 
 ## 五、在虚拟机中安装和启动验证
 
@@ -128,7 +131,7 @@ electron-updater 时使用。
 双击安装包，选择“仅为我安装”并完成安装。也可以在 PowerShell 中进行无界面测试：
 
 ```powershell
-$installer = 'C:\dsh-win-build\release\DSH Desktop Setup 0.1.0.exe'
+$installer = 'C:\dsh-win-build\release\DSH Desktop Setup <版本>.exe'
 (Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru).ExitCode
 ```
 
@@ -147,7 +150,11 @@ Test-Path "$app\Uninstall DSH Desktop.exe"
 Test-Path "$app\resources\node\node.exe"
 Test-Path "$app\resources\node\node_modules\npm\bin\npm-cli.js"
 Test-Path "$app\resources\node\node_modules\corepack\dist\corepack.js"
+Test-Path "$app\resources\pnpm\bin\pnpm.cjs"
 Test-Path "$app\resources\seed\runtime.tar.gz"
+Test-Path "$app\resources\plugins\dsh-plugin-manager\lib\client.js"
+Test-Path "$app\resources\plugins\dsh-plugin-remote-control\lib\client.js"
+Test-Path "$app\resources\plugins\dsh-plugin-skin-studio\lib\client.js"
 ```
 
 所有结果都应为 `True`。
@@ -168,6 +175,7 @@ C:\Users\<用户名>\AppData\Roaming\DSH Desktop\logs\desktop.log
 
 ```text
 种子运行时安装完成
+内置插件已就绪：dsh-plugin-manager、dsh-plugin-remote-control、dsh-plugin-skin-studio
 dsh web: http://127.0.0.1:37080
 Harness 服务就绪：http://127.0.0.1:37080
 ```
@@ -178,18 +186,29 @@ Harness 服务就绪：http://127.0.0.1:37080
 Get-NetTCPConnection -State Listen -LocalPort 37080
 ```
 
-最后确认应用能够显示内测声明、API Key 配置页以及完整的 Harness 主界面。
+最后确认应用能够显示内测声明、API Key 配置页以及完整的 Harness 主界面，并且左侧栏
+同时出现「插件」「皮肤」「远程控制」三个入口。
+
+三个插件的可解析状态可用 PowerShell 检查：
+
+```powershell
+$profile = "$HOME\.dsh\profiles\web"
+@('dsh-plugin-manager', 'dsh-plugin-remote-control', 'dsh-plugin-skin-studio') |
+  ForEach-Object { Test-Path "$profile\node_modules\$_\package.json" }
+```
+
+三个结果都必须为 `True`。`package.json` 的 `dsh.profile.bundles` 中也必须有这三个包名。
 
 ### 4. 验证插件所需的 pnpm
 
 应用启动后会在用户数据目录生成 pnpm 包装脚本：
 
 ```bat
-set "COREPACK_HOME=%APPDATA%\DSH Desktop\corepack"
 "%APPDATA%\DSH Desktop\pnpm-shim\pnpm.cmd" --version
 ```
 
-能输出 pnpm 版本号，说明 Corepack 与插件安装链路可用。首次执行可能需要联网下载 pnpm。
+能输出 pnpm 版本号，说明插件安装链路可用。当前安装包直接携带 pnpm，这一步不需要联网；
+只有随包 pnpm 异常缺失、退回 Corepack 时才可能下载。
 
 ### 5. 验证卸载器
 
@@ -210,17 +229,17 @@ $uninstaller = "$env:LOCALAPPDATA\Programs\DSH Desktop\Uninstall DSH Desktop.exe
 在 Windows 命令提示符中执行：
 
 ```bat
-copy /Y "C:\dsh-win-build\release\DSH Desktop Setup 0.1.0.exe" ^
-  "C:\Mac\Home\products\deepseek-herness-app\release\DSH Desktop Setup 0.1.0.exe"
+copy /Y "C:\dsh-win-build\release\DSH Desktop Setup <版本>.exe" ^
+  "C:\Mac\Home\products\deepseek-herness-app\release\DSH Desktop Setup <版本>.exe"
 
-copy /Y "C:\dsh-win-build\release\DSH Desktop Setup 0.1.0.exe.blockmap" ^
-  "C:\Mac\Home\products\deepseek-herness-app\release\DSH Desktop Setup 0.1.0.exe.blockmap"
+copy /Y "C:\dsh-win-build\release\DSH Desktop Setup <版本>.exe.blockmap" ^
+  "C:\Mac\Home\products\deepseek-herness-app\release\DSH Desktop Setup <版本>.exe.blockmap"
 ```
 
 回到 macOS 后可计算校验值：
 
 ```sh
-shasum -a 256 "release/DSH Desktop Setup 0.1.0.exe"
+shasum -a 256 "release/DSH Desktop Setup <版本>.exe"
 ```
 
 ## 常见问题
@@ -243,6 +262,17 @@ set "PATH=%NODE_HOME%;%PATH%"
 
 通常是上一次中断构建后残留的 `7za.exe`、`makensis.exe` 或安全软件仍占用文件。结束残留
 构建进程后重试；无法确认占用方时重启虚拟机最稳妥。
+
+### 安装成功，但左侧没有「插件 / 皮肤 / 远程控制」
+
+先看日志里是否有“内置插件已就绪”，再检查 `~/.dsh/profiles/web/package.json`。旧版曾把
+插件复制到 `AppData\Roaming\DSH Desktop\plugins`，Harness 在 Windows 上转发参数时会
+把带空格的绝对路径截成 `link:Desktop\plugins\...`，看似安装成功但链接实际不存在。
+
+当前版本把副本放在 profile 内的 `.dsh-desktop-plugins`，并传不含空格的相对 `link:`
+路径；启动时会同时核对依赖地址、`node_modules` 是否可解析、bundle 是否启用，发现旧坏
+链接会自动重装三个插件，并清理同一问题留下的无效 `DSH` 半截路径依赖。任一项仍失败时
+应用会明确报错，不再静默打开残缺主界面。
 
 ### 安装时提示“未知发布者”
 

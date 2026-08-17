@@ -33,10 +33,12 @@ Runs on macOS (Apple Silicon) and Windows 11 (x64).
 
 Grab a build from [Releases](https://github.com/huzhicheng/dsh-desktop/releases):
 
-| Platform | File |
+| Platform | Download |
 | --- | --- |
-| macOS | `DSH Desktop-<version>-arm64.dmg` |
-| Windows 11 | `DSH Desktop Setup <version>.exe` |
+| macOS (Apple Silicon) | [**Get the .dmg**](https://github.com/huzhicheng/dsh-desktop/releases/latest) |
+| Windows 11 (x64) | [**Get the .exe**](https://github.com/huzhicheng/dsh-desktop/releases/latest) |
+
+Files are named `DSH-Desktop-<version>-arm64.dmg` and `DSH-Desktop-Setup-<version>.exe`.
 
 Builds are **unsigned** today, so the OS will stop you the first time:
 
