@@ -5,13 +5,36 @@ import { BrowserWindow, shell } from 'electron'
 import { APP_DISPLAY_NAME } from './config'
 
 let statusWindow: BrowserWindow | undefined
+let statusReady = false
+
+export type StartupStage = 'preparing' | 'extracting' | 'starting' | 'loading' | 'error'
+
+export interface StartupStatus {
+  stage: StartupStage
+  message: string
+  detail?: string
+  error?: string
+}
+
+let latestStatus: StartupStatus = {
+  stage: 'preparing',
+  message: '正在检查本地运行环境…',
+  detail: '启动过程全部在本机完成，当前不会下载文件。',
+}
+
+function sendLatestStatus(): void {
+  if (statusReady && statusWindow !== undefined && !statusWindow.isDestroyed()) {
+    statusWindow.webContents.send('status', latestStatus)
+  }
+}
 
 /** 启动状态小窗（无边框，纯本地页面）。 */
 export function showStatusWindow(): void {
   if (statusWindow !== undefined && !statusWindow.isDestroyed()) return
+  statusReady = false
   statusWindow = new BrowserWindow({
-    width: 420,
-    height: 260,
+    width: 480,
+    height: 340,
     resizable: false,
     frame: false,
     show: false,
@@ -24,18 +47,25 @@ export function showStatusWindow(): void {
     },
   })
   void statusWindow.loadFile(join(__dirname, '../status/status.html'))
+  statusWindow.webContents.once('did-finish-load', () => {
+    statusReady = true
+    sendLatestStatus()
+  })
   statusWindow.once('ready-to-show', () => { statusWindow?.show() })
-  statusWindow.on('closed', () => { statusWindow = undefined })
+  statusWindow.on('closed', () => {
+    statusReady = false
+    statusWindow = undefined
+  })
 }
 
-export function pushStatus(update: { stage: string; message: string; error?: string }): void {
-  if (statusWindow !== undefined && !statusWindow.isDestroyed()) {
-    statusWindow.webContents.send('status', update)
-  }
+export function pushStatus(update: StartupStatus): void {
+  latestStatus = update
+  sendLatestStatus()
 }
 
 export function closeStatusWindow(): void {
   statusWindow?.close()
+  statusReady = false
   statusWindow = undefined
 }
 

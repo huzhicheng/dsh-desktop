@@ -19,6 +19,7 @@ import { APP_DISPLAY_NAME } from './config'
 import { createHarnessService } from './harness-service'
 import { initLogger, log } from './logger'
 import { assertBundledToolchain, harnessEntry, logsDir } from './paths'
+import { ensureBundledPlugins, writePluginsReadme } from './plugin-bootstrap'
 import { ensurePnpmShim } from './pnpm-shim'
 import { ensureSeedInstalled, readCurrent, rollback } from './runtime-store'
 import { focusWindow, hasWindow, reloadHarness, showShellWindow } from './shell-window'
@@ -106,15 +107,24 @@ async function startServiceWithFallback(version: string): Promise<string> {
 async function checkShellUpdate(): Promise<void> {
   if (!app.isPackaged) return
   try {
-    const { autoUpdater } = await import('electron-updater')
-    autoUpdater.logger = { info: log.info, warn: log.warn, error: log.error, debug: () => {} }
-    await autoUpdater.checkForUpdatesAndNotify()
+    // electron-updater 是 CommonJS；原生 dynamic import 下 getter 只挂在 default 上，
+    // 不能直接解构 named export，否则 Windows 打包态拿到 undefined。
+    const imported = await import('electron-updater')
+    const updaterModule = imported as unknown as {
+      default?: { autoUpdater?: typeof imported.autoUpdater }
+      autoUpdater?: typeof imported.autoUpdater
+    }
+    const shellUpdater = updaterModule.autoUpdater ?? updaterModule.default?.autoUpdater
+    if (shellUpdater === undefined) throw new Error('electron-updater 未导出 autoUpdater')
+    shellUpdater.logger = { info: log.info, warn: log.warn, error: log.error, debug: () => {} }
+    await shellUpdater.checkForUpdatesAndNotify()
   } catch (error) {
     log.warn('壳更新检查跳过：', error instanceof Error ? error.message : String(error))
   }
 }
 
 async function boot(): Promise<void> {
+  const bootStartedAt = Date.now()
   // Windows 通知与任务栏归组依赖 AppUserModelID（与 electron-builder 的 appId 一致）
   if (process.platform === 'win32') app.setAppUserModelId('com.moon.dsh-desktop')
   // 开发态的 Dock 图标：打包后的图标来自 .app 里的 icns，而 `electron .` 直接
@@ -133,19 +143,58 @@ async function boot(): Promise<void> {
   }
 
   showStatusWindow()
-  pushStatus({ stage: 'preparing', message: '正在准备运行环境…' })
+  pushStatus({
+    stage: 'preparing',
+    message: '正在检查本地运行环境…',
+    detail: '启动过程全部在本机完成，当前不会下载文件。',
+  })
 
   let state
   try {
-    state = await ensureSeedInstalled()
+    state = await ensureSeedInstalled((progress) => {
+      if (progress.stage === 'extracting') {
+        pushStatus({
+          stage: 'extracting',
+          message: `首次启动：正在解压 Harness ${progress.version}`,
+          detail: process.platform === 'win32'
+            ? '正在释放安装包内置资源。Windows 安全扫描可能让这一步持续 1～2 分钟，程序仍在正常运行。'
+            : '正在释放安装包内置资源。首次解压可能需要几十秒，程序仍在正常运行。',
+        })
+      } else {
+        pushStatus({
+          stage: 'extracting',
+          message: '正在校验解压后的运行环境…',
+          detail: '资源已经解压完成，正在完成最后的本地检查。',
+        })
+      }
+    })
   } catch (error) {
     return fatal('初始化运行环境失败', error instanceof Error ? error.message : String(error))
   }
 
   // 先备好 pnpm：Harness 进程要靠它在 Web UI 里安装插件
+  pushStatus({
+    stage: 'preparing',
+    message: `本地运行环境 ${state.version} 已就绪`,
+    detail: '正在准备插件支持，不会在此时下载插件。',
+  })
   await ensurePnpmShim()
 
-  pushStatus({ stage: 'starting', message: `正在启动 Harness ${state.version} …` })
+  // 随包分发的三个插件（插件管理 / 皮肤 / 远程控制）要在 dsh 启动前装好：
+  // profile 是 dsh 启动时读的，装晚了得等下次重启才出现入口
+  pushStatus({
+    stage: 'preparing',
+    message: '正在准备内置插件…',
+    detail: '插件已随安装包分发，这一步在本机完成，不会联网下载。',
+  })
+  await writePluginsReadme()
+  await ensureBundledPlugins(state.version)
+
+  pushStatus({
+    stage: 'starting',
+    message: `正在启动本地 Harness ${state.version}…`,
+    detail: '正在初始化本机 Node.js 服务，不是在下载安装。通常需要 20～90 秒。',
+  })
   let origin: string
   try {
     origin = await startServiceWithFallback(state.version)
@@ -179,8 +228,18 @@ async function boot(): Promise<void> {
   }
   createTray(trayDeps)
 
+  pushStatus({
+    stage: 'loading',
+    message: 'Harness 已就绪，正在打开主界面…',
+    detail: '本地服务已经启动，马上就好。',
+  })
+  try {
+    await showShellWindow(origin)
+  } catch (error) {
+    return fatal('主界面加载失败', error instanceof Error ? error.message : String(error))
+  }
   closeStatusWindow()
-  await showShellWindow(origin)
+  log.info(`启动流程完成（总耗时 ${String(Math.round((Date.now() - bootStartedAt) / 1000))} 秒）`)
 
   registerBridgeIpc()
   // 桥接是可选能力：起不来只记日志，不影响主界面

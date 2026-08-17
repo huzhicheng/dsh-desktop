@@ -96,6 +96,7 @@ export function createHarnessUpdater(options: HarnessUpdaterOptions): HarnessUpd
     setPhase({ phase: 'checking' })
     try {
       const current = await readCurrent()
+      log.info('主界面已就绪，开始联网检查 Harness 更新…')
       const latest = await fetchLatestVersion()
       const currentVersion = current?.version
       const hasUpdate = currentVersion === undefined || semver.gt(latest.version, currentVersion)

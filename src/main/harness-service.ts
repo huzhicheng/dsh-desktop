@@ -59,6 +59,8 @@ export function createHarnessService(options: HarnessServiceOptions = {}): Harne
   async function start(entry: string, port: number = PREFERRED_PORT): Promise<string> {
     if (child !== undefined) throw new Error('Harness 服务已在运行')
     stopping = false
+    const startedAt = Date.now()
+    log.info(`正在启动 Harness 本地服务（端口 ${String(port)}）…`)
     const spawned = spawn(bundledNode(), [entry, 'web', '--host', '127.0.0.1', '--port', String(port)], {
       cwd: app.getPath('home'),
       env: {
@@ -151,7 +153,7 @@ export function createHarnessService(options: HarnessServiceOptions = {}): Harne
         options.onUnexpectedExit?.({ code, signal })
       }
     })
-    log.info(`Harness 服务就绪：${origin}`)
+    log.info(`Harness 服务就绪：${origin}（耗时 ${String(Math.round((Date.now() - startedAt) / 1000))} 秒）`)
     return origin
   }
 

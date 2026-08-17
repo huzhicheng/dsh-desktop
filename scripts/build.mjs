@@ -1,7 +1,8 @@
 /** 构建：esbuild 打包主进程与 preload（CommonJS，Electron 直接加载），拷贝本地页面。 */
 
 import { build } from 'esbuild'
-import { cp, mkdir, rm } from 'node:fs/promises'
+import { cp, mkdir, readdir, rm } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
 import { join, resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
@@ -51,4 +52,25 @@ await cp(join(ROOT, 'assets/logo.png'), join(DIST, 'status/logo.png'))
 await mkdir(join(DIST, 'settings'), { recursive: true })
 await cp(join(ROOT, 'src/settings/settings.html'), join(DIST, 'settings/settings.html'))
 
-console.log('构建完成：dist/')
+// 三个随包分发的插件也一起构建：打包时只取它们的 lib/，
+// 这里不构建就会把上一次的旧产物打进安装包
+const plugins = (await readdir(join(ROOT, 'plugins'), { withFileTypes: true }))
+  .filter(entry => entry.isDirectory() && entry.name.startsWith('dsh-plugin-'))
+  .map(entry => entry.name)
+for (const name of plugins) {
+  const dir = join(ROOT, 'plugins', name)
+  await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [join(dir, 'scripts/build.mjs')], {
+      cwd: dir,
+      stdio: ['ignore', 'pipe', 'inherit'],
+    })
+    child.once('error', reject)
+    child.once('exit', (code) => {
+      if (code === 0) resolve()
+      else reject(new Error(`插件 ${name} 构建失败（退出码 ${code}）`))
+    })
+  })
+  console.log(`  插件 ${name} 已构建`)
+}
+
+console.log(`构建完成：dist/ 与 ${plugins.length} 个内置插件`)

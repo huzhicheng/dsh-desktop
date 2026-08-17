@@ -1,6 +1,6 @@
 {
-  "name": "dsh-plugin-skin-studio",
-  "description": "DeepSeek Harness 皮肤插件：换背景图或视频、字体、配色与透明度",
+  "name": "dsh-plugin-remote-control",
+  "description": "DeepSeek Harness 远程控制入口：在飞书或 Telegram 里驱动本机 agent",
   "version": "0.1.0",
   "type": "module",
   "license": "MIT",

@@ -3,7 +3,7 @@
  * current.json 记录当前启用版本与上一个可用版本（用于失败回滚）。
  */
 
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -19,6 +19,11 @@ interface CurrentState {
   previous?: string
   /** 被标记为损坏的版本（就绪失败），升级检查会跳过。 */
   broken?: string[]
+}
+
+export interface SeedInstallProgress {
+  stage: 'extracting' | 'finalizing'
+  version: string
 }
 
 function currentFile(): string {
@@ -42,10 +47,25 @@ export async function writeCurrent(state: CurrentState): Promise<void> {
   await rename(temp, currentFile())
 }
 
+/** 异步解压，避免 Windows 首启时阻塞 Electron 主线程、让启动窗口看起来卡死。 */
+async function extractSeed(tarball: string, staging: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    execFile('tar', ['-xzf', tarball, '-C', staging], { windowsHide: true }, (error) => {
+      if (error === null) resolve()
+      else reject(error)
+    })
+  })
+}
+
 /** 首次启动：把随 app 分发的种子运行时解压为初始版本。 */
-export async function ensureSeedInstalled(): Promise<CurrentState> {
+export async function ensureSeedInstalled(
+  onProgress?: (progress: SeedInstallProgress) => void,
+): Promise<CurrentState> {
   const existing = await readCurrent()
-  if (existing) return existing
+  if (existing) {
+    log.info(`使用已安装的本地运行时：${existing.version}（跳过解压）`)
+    return existing
+  }
 
   const manifestFile = join(seedDir(), 'seed.json')
   const tarball = join(seedDir(), 'runtime.tar.gz')
@@ -55,11 +75,15 @@ export async function ensureSeedInstalled(): Promise<CurrentState> {
   const manifest = JSON.parse(await readFile(manifestFile, 'utf8')) as { version: string }
   const version = manifest.version
   log.info(`首次启动，解压种子运行时 ${version} …`)
+  onProgress?.({ stage: 'extracting', version })
 
   const staging = join(runtimeRoot(), `.seed-staging`)
   await rm(staging, { recursive: true, force: true })
   await mkdir(staging, { recursive: true })
-  execFileSync('tar', ['-xzf', tarball, '-C', staging])
+  const extractStartedAt = Date.now()
+  await extractSeed(tarball, staging)
+  log.info(`种子运行时解压完成：${version}（耗时 ${String(Math.round((Date.now() - extractStartedAt) / 1000))} 秒）`)
+  onProgress?.({ stage: 'finalizing', version })
 
   const target = join(versionsDir(), version)
   await mkdir(versionsDir(), { recursive: true })

@@ -3,7 +3,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('desktopStatus', {
-  onUpdate(callback: (update: { stage: string; message: string; error?: string }) => void) {
+  onUpdate(callback: (update: {
+    stage: 'preparing' | 'extracting' | 'starting' | 'loading' | 'error'
+    message: string
+    detail?: string
+    error?: string
+  }) => void) {
     ipcRenderer.on('status', (_event, update) => { callback(update) })
   },
 })

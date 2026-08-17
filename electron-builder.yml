@@ -22,6 +22,15 @@ mac:
     - target: zip
       arch: [arm64]
   extraResources:
+    # 随包分发的三个插件（插件管理 / 皮肤 / 远程控制）。
+    # 侧栏那三个入口全靠它们提供，不打进来用户装完是空的。
+    # 只带运行必需的三样，源码与 node_modules 不进包。
+    - from: plugins
+      to: plugins
+      filter:
+        - "dsh-plugin-*/lib/**"
+        - "dsh-plugin-*/package.json"
+        - "dsh-plugin-*/cordis.patch.yml"
     # 官方 Node.js 运行时（用户因此无需安装 Node）
     - from: vendor/node/darwin-arm64
       to: node
@@ -51,6 +60,15 @@ win:
     - target: zip
       arch: [x64]
   extraResources:
+    # 随包分发的三个插件（插件管理 / 皮肤 / 远程控制）。
+    # 侧栏那三个入口全靠它们提供，不打进来用户装完是空的。
+    # 只带运行必需的三样，源码与 node_modules 不进包。
+    - from: plugins
+      to: plugins
+      filter:
+        - "dsh-plugin-*/lib/**"
+        - "dsh-plugin-*/package.json"
+        - "dsh-plugin-*/cordis.patch.yml"
     - from: vendor/node/win32-x64
       to: node
     # Windows 发行包的 npm 在根级 node_modules 下，electron-builder 会默认忽略

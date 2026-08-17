@@ -28,42 +28,103 @@
     body {
       display: flex;
       flex-direction: column;
-      align-items: center;
+      align-items: stretch;
       justify-content: center;
-      gap: 14px;
+      gap: 16px;
       -webkit-app-region: drag;
       box-sizing: border-box;
-      padding: 24px;
-      text-align: center;
+      padding: 30px 34px;
     }
-    .logo { width: 56px; height: 56px; display: block; }
-    .title { font-size: 15px; font-weight: 600; }
-    .message { font-size: 13px; color: var(--muted); min-height: 18px; max-width: 360px; }
+    .brand { display: flex; align-items: center; gap: 13px; }
+    .logo { width: 48px; height: 48px; display: block; }
+    .brand-copy { display: flex; flex-direction: column; gap: 4px; text-align: left; }
+    .title { font-size: 16px; font-weight: 650; }
+    .stage-label { font-size: 12px; color: var(--accent); }
+    .progress { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .step { display: flex; flex-direction: column; gap: 7px; font-size: 11px; color: var(--muted); }
+    .track { height: 3px; border-radius: 999px; background: color-mix(in srgb, var(--muted) 20%, transparent); overflow: hidden; }
+    .track::after { content: ''; display: block; width: 0; height: 100%; background: var(--accent); transition: width 320ms ease; }
+    .step.done .track::after { width: 100%; }
+    .step.active { color: var(--fg); }
+    .step.active .track::after { width: 55%; animation: breathe 1.25s ease-in-out infinite alternate; }
+    .message { font-size: 15px; line-height: 1.45; font-weight: 600; text-align: left; min-height: 22px; }
+    .detail { font-size: 12px; line-height: 1.6; color: var(--muted); text-align: left; min-height: 38px; }
+    .activity { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--muted); }
+    .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1s ease-out infinite; }
     .spinner {
-      width: 18px; height: 18px;
+      width: 17px; height: 17px;
       border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
       border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 0.9s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+      margin-left: auto;
     }
-    .error .spinner { display: none; }
-    .error .message { color: #e5735a; white-space: pre-wrap; max-height: 90px; overflow: auto; -webkit-app-region: no-drag; }
+    .error .spinner, .error .progress, .error .activity { display: none; }
+    .error .message { color: #e5735a; }
+    .error .detail { color: #e5735a; white-space: pre-wrap; max-height: 120px; overflow: auto; -webkit-app-region: no-drag; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); } 100% { box-shadow: 0 0 0 7px transparent; } }
+    @keyframes breathe { from { opacity: 0.45; } to { opacity: 1; } }
   </style>
 </head>
 <body>
-  <img class="logo" src="logo.png" alt="">
-  <div class="title">DSH Desktop</div>
-  <div class="spinner"></div>
-  <div class="message" id="message">正在启动…</div>
+  <div class="brand">
+    <img class="logo" src="logo.png" alt="">
+    <div class="brand-copy">
+      <div class="title">DSH Desktop</div>
+      <div class="stage-label" id="stageLabel">检查运行环境</div>
+    </div>
+    <div class="spinner"></div>
+  </div>
+  <div class="progress">
+    <div class="step active" data-stage="preparing"><div class="track"></div><span>检查环境</span></div>
+    <div class="step" data-stage="extracting"><div class="track"></div><span>准备资源</span></div>
+    <div class="step" data-stage="starting"><div class="track"></div><span>启动服务</span></div>
+    <div class="step" data-stage="loading"><div class="track"></div><span>打开界面</span></div>
+  </div>
+  <div class="message" id="message">正在检查本地运行环境…</div>
+  <div class="detail" id="detail">启动过程全部在本机完成，当前不会下载文件。</div>
+  <div class="activity"><span class="pulse"></span><span id="elapsed">程序仍在运行 · 已用时 0 秒</span></div>
   <script>
     const messageElement = document.getElementById('message')
+    const detailElement = document.getElementById('detail')
+    const stageLabelElement = document.getElementById('stageLabel')
+    const elapsedElement = document.getElementById('elapsed')
+    const steps = [...document.querySelectorAll('.step')]
+    const stages = ['preparing', 'extracting', 'starting', 'loading']
+    const stageLabels = {
+      preparing: '检查运行环境',
+      extracting: '首次启动 · 准备本地资源',
+      starting: '启动本地服务',
+      loading: '加载主界面',
+      error: '启动失败',
+    }
+    const startedAt = Date.now()
+
+    function updateElapsed() {
+      const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
+      elapsedElement.textContent = `程序仍在运行 · 已用时 ${seconds} 秒`
+    }
+
+    function updateProgress(stage) {
+      const currentIndex = stages.indexOf(stage)
+      steps.forEach((step, index) => {
+        step.classList.toggle('done', currentIndex >= 0 && index < currentIndex)
+        step.classList.toggle('active', index === currentIndex)
+      })
+    }
+
+    updateElapsed()
+    setInterval(updateElapsed, 1000)
     window.desktopStatus?.onUpdate((update) => {
+      document.body.classList.toggle('error', update.stage === 'error')
+      stageLabelElement.textContent = stageLabels[update.stage] ?? '正在启动'
+      messageElement.textContent = update.message
       if (update.stage === 'error') {
-        document.body.classList.add('error')
-        messageElement.textContent = update.message + (update.error ? '\n' + update.error : '')
+        detailElement.textContent = update.error ?? update.detail ?? ''
       } else {
-        messageElement.textContent = update.message
+        detailElement.textContent = update.detail ?? ''
+        updateProgress(update.stage)
       }
     })
   </script>

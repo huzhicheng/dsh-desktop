@@ -1,6 +1,8 @@
 /**
  * 构建插件产物。
  *
+ * Host 半侧走 `main`（lib/index.js），是普通 ESM。
+ *
  * 浏览器半侧不是普通 ESM：dsh 的页面用自己的模块加载器，client bundle 必须是
  * 一次 `window.__ModuleLoader__.load({ id, factory })` 注册调用，factory 里用
  * 传入的 `require()` 取宿主提供的模块（react、@deepseek-ai/* 等）。直接产出
@@ -27,7 +29,7 @@ const shared = {
   logLevel: 'warning',
 }
 
-// Host 半侧：空壳，但 loader 要求它存在
+// Host 半侧
 await build({
   ...shared,
   entryPoints: [join(ROOT, 'src/index.ts')],
