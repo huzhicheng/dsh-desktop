@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop",
   "productName": "DSH Desktop",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "DeepSeek Harness 桌面端：免装 Node.js，开箱即用，支持 Harness 在线升级",
   "private": true,
   "main": "dist/main/index.js",
@@ -18,7 +18,8 @@
     "prepare:win": "node scripts/fetch-node.mjs --platform win32 --arch x64 && node scripts/seed-runtime.mjs --platform win32 --arch x64",
     "typecheck": "tsc --noEmit",
     "icons": "electron scripts/make-icons.mjs",
-    "prepare:pnpm": "node scripts/fetch-pnpm.mjs"
+    "prepare:pnpm": "node scripts/fetch-pnpm.mjs",
+    "install:latest": "node scripts/install-latest.mjs"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "^0.25.1",

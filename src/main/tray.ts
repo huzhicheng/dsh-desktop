@@ -70,7 +70,11 @@ export function refreshTray(deps: TrayDeps): void {
     error: '远程控制：异常',
     stopped: '远程控制：未启用',
   }[deps.getBridgeState()]
+  // 应用自身的版本也要显示：机器上可能同时存在正式安装、本地构建、开发态
+  // 三份，只显示 Harness 版本的话根本分不出跑的是哪一个（实测被这个坑过）
+  const appLabel = `${APP_DISPLAY_NAME} ${app.getVersion()}${app.isPackaged ? '' : '（开发态）'}`
   tray.setContextMenu(Menu.buildFromTemplate([
+    { label: appLabel, enabled: false },
     { label: version === undefined ? 'Harness 未安装' : `Harness ${version}`, enabled: false },
     ...(phaseLabel === undefined ? [] : [{ label: phaseLabel, enabled: false }]),
     { label: bridgeLabel, enabled: false },

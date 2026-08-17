@@ -109,7 +109,7 @@ export async function showShellWindow(origin: string): Promise<void> {
     created.webContents.executeJavaScript(
       `document.documentElement.style.setProperty('--skin-window-controls', '${String(WINDOW_CONTROLS_HEIGHT)}px')`,
     ).catch(() => { /* 页面还没就绪，下次导航会再写一次 */ })
-    void declareDragRegion()
+    declareDragRegion()
   }
 
   /*
@@ -120,37 +120,37 @@ export async function showShellWindow(origin: string): Promise<void> {
    * （实测整页 drag 区元素数为 0），结果就是窗口完全拖不动——没有标题栏可抓，
    * 页面也不提供拖拽区。
    *
-   * 这是本文件唯一一处往页面注入样式的地方，理由是它属于窗口管理而不是外观：
+   * 这是本文件唯一一处往页面注入内容的地方，理由是它属于窗口管理而不是外观：
    * 交给皮肤插件做的话，用户一卸插件窗口就拖不动了，那是更糟的耦合。
    *
-   * 两块拖拽区，都按实测的元素位置划定：
-   *   1. 顶部 22px 通栏。实测 dsh 顶部最靠上的可交互元素（侧栏折叠按钮）
-   *      上边界在 y=22，22px 以内是安全空白。
-   *   2. 侧栏的 logo 行，除去里面的按钮。它在视觉上就是标题栏的位置，
-   *      高度够手抓（约 50px）。
+   * **必须用行内样式的真实元素，不能用 insertCSS。** insertCSS 注入的是「用户
+   * 样式表」，Chromium 收集拖拽区时不认它——实测过：注入之后
+   * getComputedStyle 明明返回 webkitAppRegion: 'drag'，窗口照样拖不动；
+   * 换成行内样式的真实 div 立刻就能拖。计算样式为 drag 只能说明 CSS 解析了，
+   * 不代表拖拽区真的建立了，这两件事要分开验。
    *
-   * 选择器匹配不上时（dsh 改了类名）只是少了第二块，顶部通栏仍然可拖。
+   * 高度取 22px：实测 dsh 顶部最靠上的可交互元素（侧栏折叠按钮）上边界在 y=22，
+   * 22px 以内是安全空白，这条不会盖住任何可点的东西。dsh 改版后若有元素上移，
+   * 这个数要重新量。
+   *
+   * 挂在 documentElement 而不是 body 上：dsh 是 SPA，重渲染会换掉 body 里的内容。
    */
-  const declareDragRegion = async (): Promise<void> => {
+  const declareDragRegion = (): void => {
     if (process.platform !== 'darwin') return
-    try {
-      await created.webContents.insertCSS(`
-        body::before {
-          content: '';
-          position: fixed;
-          top: 0; left: 0; right: 0;
-          height: ${String(TOP_DRAG_STRIP)}px;
-          z-index: 2147483000;
-          -webkit-app-region: drag;
+    created.webContents.executeJavaScript(`
+      (() => {
+        let bar = document.getElementById('__dsh_drag_region__')
+        if (bar === null) {
+          bar = document.createElement('div')
+          bar.id = '__dsh_drag_region__'
+          document.documentElement.appendChild(bar)
         }
-        [class*="logoRow"] { -webkit-app-region: drag; }
-        [class*="logoRow"] button,
-        [class*="logoRow"] a,
-        [class*="logoRow"] input { -webkit-app-region: no-drag; }
-      `)
-    } catch {
-      // 注入失败只是拖不动窗口，不该影响其它功能
-    }
+        bar.style.cssText = 'position:fixed;top:0;left:0;right:0;'
+          + 'height:${String(TOP_DRAG_STRIP)}px;z-index:2147483000'
+        bar.style.setProperty('-webkit-app-region', 'drag')
+        return true
+      })()
+    `).catch(() => { /* 页面还没就绪，下次导航会再来一次 */ })
   }
 
   created.webContents.on('dom-ready', declareWindowControls)
