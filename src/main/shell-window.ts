@@ -17,6 +17,14 @@ import { APP_DISPLAY_NAME } from './config'
  */
 const WINDOW_CONTROLS_HEIGHT = 30
 const TRAFFIC_LIGHT_SIZE = 12
+/**
+ * 顶部通栏拖拽区的高度。
+ *
+ * 实测 dsh 顶部最靠上的可交互元素（侧栏折叠按钮）上边界在 y=22，
+ * 所以 22px 以内不会盖住任何可点的东西。dsh 改版后若有元素上移，
+ * 这个数要跟着重新量。
+ */
+const TOP_DRAG_STRIP = 22
 
 let window: BrowserWindow | undefined
 let harnessOrigin: string | undefined
@@ -101,7 +109,50 @@ export async function showShellWindow(origin: string): Promise<void> {
     created.webContents.executeJavaScript(
       `document.documentElement.style.setProperty('--skin-window-controls', '${String(WINDOW_CONTROLS_HEIGHT)}px')`,
     ).catch(() => { /* 页面还没就绪，下次导航会再写一次 */ })
+    void declareDragRegion()
   }
+
+  /*
+   * 声明窗口拖拽区。
+   *
+   * macOS 上用的是 hiddenInset（隐藏标题栏、交通灯浮在页面上），这种模式下
+   * 「哪里能拖动窗口」必须由页面用 -webkit-app-region 声明。dsh 的页面没有声明
+   * （实测整页 drag 区元素数为 0），结果就是窗口完全拖不动——没有标题栏可抓，
+   * 页面也不提供拖拽区。
+   *
+   * 这是本文件唯一一处往页面注入样式的地方，理由是它属于窗口管理而不是外观：
+   * 交给皮肤插件做的话，用户一卸插件窗口就拖不动了，那是更糟的耦合。
+   *
+   * 两块拖拽区，都按实测的元素位置划定：
+   *   1. 顶部 22px 通栏。实测 dsh 顶部最靠上的可交互元素（侧栏折叠按钮）
+   *      上边界在 y=22，22px 以内是安全空白。
+   *   2. 侧栏的 logo 行，除去里面的按钮。它在视觉上就是标题栏的位置，
+   *      高度够手抓（约 50px）。
+   *
+   * 选择器匹配不上时（dsh 改了类名）只是少了第二块，顶部通栏仍然可拖。
+   */
+  const declareDragRegion = async (): Promise<void> => {
+    if (process.platform !== 'darwin') return
+    try {
+      await created.webContents.insertCSS(`
+        body::before {
+          content: '';
+          position: fixed;
+          top: 0; left: 0; right: 0;
+          height: ${String(TOP_DRAG_STRIP)}px;
+          z-index: 2147483000;
+          -webkit-app-region: drag;
+        }
+        [class*="logoRow"] { -webkit-app-region: drag; }
+        [class*="logoRow"] button,
+        [class*="logoRow"] a,
+        [class*="logoRow"] input { -webkit-app-region: no-drag; }
+      `)
+    } catch {
+      // 注入失败只是拖不动窗口，不该影响其它功能
+    }
+  }
+
   created.webContents.on('dom-ready', declareWindowControls)
   created.webContents.on('did-finish-load', declareWindowControls)
 
