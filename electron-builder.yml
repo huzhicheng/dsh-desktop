@@ -9,6 +9,13 @@ files:
   - dist/**
   - package.json
 
+# 桥接脚本要留在 asar 外面。它由内置 Node 以独立进程执行，而普通 Node 读不了
+# asar 归档（asar 支持是 Electron 给 fs 打的补丁，子进程没有），留在里面会
+# 报 Cannot find module 然后无限退避重启。依赖已在构建时全部内联，解包这一个
+# 目录就够。取路径见 src/main/bridge-service.ts 的 bridgeScriptPath。
+asarUnpack:
+  - dist/bridge/**
+
 npmRebuild: false
 
 # 打包后给 macOS 产物做 ad-hoc 签名。不签的话 Apple Silicon 上会报

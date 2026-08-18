@@ -24,6 +24,9 @@ const required = [
   'resources/plugins/dsh-plugin-remote-control/lib/client.js',
   'resources/plugins/dsh-plugin-skin-studio/package.json',
   'resources/plugins/dsh-plugin-skin-studio/lib/client.js',
+  // 桥接脚本必须在 asar 外面：它由内置 Node 以独立进程执行，而普通 Node
+  // 读不了 asar 归档。留在里面的话打包能过、装完远程控制一次都起不来。
+  'resources/app.asar.unpacked/dist/bridge/index.js',
 ]
 
 const missing = required.filter((relative) => {

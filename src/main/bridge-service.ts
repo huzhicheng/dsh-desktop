@@ -16,6 +16,24 @@ import { DEFAULT_CONFIG, type BridgeConfig } from '../bridge/types'
 /** 连续失败后的重启退避上限。 */
 const MAX_RESTART_DELAY_MS = 60_000
 
+/**
+ * 桥接脚本的路径。
+ *
+ * 打包后 app.getAppPath() 指向 app.asar，而这个脚本是交给**内置 Node** 执行的，
+ * 普通 Node 读不了 asar 归档——asar 支持是 Electron 给 fs 打的补丁，子进程没有。
+ * 直接用 asar 内的路径会报 Cannot find module，然后无限退避重启。
+ *
+ * 所以 electron-builder.yml 里把 dist/bridge 排除在 asar 之外（asarUnpack），
+ * 这里把路径改指到解包目录。开发态 getAppPath() 是仓库目录，没有 .asar 后缀，
+ * 替换不生效，正好保持原样。
+ *
+ * 这个坑只在打包后成立：开发态跑得好好的，装完的包里桥接一次都起不来。
+ */
+function bridgeScriptPath(): string {
+  const root = app.getAppPath().replace(/\.asar$/, '.asar.unpacked')
+  return join(root, 'dist/bridge/index.js')
+}
+
 export type BridgeState = 'stopped' | 'starting' | 'connected' | 'error'
 
 export interface BridgeStatus {
@@ -148,8 +166,7 @@ export function createBridgeService(options: BridgeServiceOptions = {}): BridgeS
   }
 
   const spawnBridge = (harnessEntryPath: string): void => {
-    const bridgeScript = join(app.getAppPath(), 'dist/bridge/index.js')
-    const spawned = spawn(bundledNode(), [bridgeScript], {
+    const spawned = spawn(bundledNode(), [bridgeScriptPath()], {
       cwd: app.getPath('home'),
       env: {
         ...process.env,
