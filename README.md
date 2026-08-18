@@ -15,6 +15,10 @@
   <a href="docs/development.md">开发文档</a>
 </p>
 
+<p align="center">
+  <img src="docs/images/main-window-macos.jpg" width="820" alt="DSH Desktop 主界面：自定义背景与侧栏的插件、皮肤、远程控制入口">
+</p>
+
 ---
 
 > 社区项目，非官方发布。DeepSeek Harness 目前处于开发者预览阶段。
@@ -65,6 +69,44 @@ xattr -cr "/Applications/DSH Desktop.app"
 第一次启动要解压内置的 Harness，等几秒；界面出来后左下角会有**插件 / 皮肤 / 远程控制 / 设置**四个入口。
 
 需要填一次 DeepSeek 的 API Key 才能开始对话。
+
+## 首次配置 DeepSeek API Key
+
+配置只需一次。API Key 会保存在本机配置中；截图和演示视频里的密钥均已隐藏。
+
+[▶ 查看 macOS 配置演示视频（约 11 秒）](docs/media/dsh-desktop-api-key-setup-macos.mp4)
+
+### 1. 粘贴 API Key
+
+第一次打开时会出现「添加一个 API Key 开始使用」。把 DeepSeek API Key 粘贴到
+**API 密钥**输入框；输入内容会显示为圆点，不会在界面中明文展示。
+
+<p align="center">
+  <img src="docs/images/api-key-setup-macos.jpg" width="820" alt="首次启动时的 API Key 配置窗口">
+</p>
+
+粘贴后确认按钮变为可用，点击**保存并继续**。
+
+<p align="center">
+  <img src="docs/images/api-key-filled-macos.jpg" width="820" alt="API Key 已安全填入并保持掩码">
+</p>
+
+### 2. 确认配置生效
+
+进入主界面后，打开左下角的**设置**，再点**模型**。DeepSeek 右侧出现绿色状态点，
+并显示「API 密钥已配置」，说明保存成功。
+
+<p align="center">
+  <img src="docs/images/model-configured-macos.jpg" width="820" alt="DeepSeek API 密钥已配置">
+</p>
+
+完成后会回到主界面。先选择或添加一个工作区，即可创建会话。
+
+<p align="center">
+  <img src="docs/images/api-key-configured-macos.jpg" width="820" alt="API Key 配置完成后的主界面">
+</p>
+
+以后需要更换密钥时，进入**设置 → 模型 → DeepSeek → 编辑**即可。
 
 ## 换肤
 

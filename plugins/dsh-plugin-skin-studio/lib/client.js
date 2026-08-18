@@ -31,7 +31,17 @@ __export(index_exports, {
 module.exports = __toCommonJS(index_exports);
 
 // src/config.ts
+var CONFIG_VERSION = 2;
+var MIGRATED_KEYS = [
+  "imageFit",
+  "imageOpacity",
+  "wash",
+  "transparency",
+  "textContrast",
+  "textStroke"
+];
 var DEFAULT_CONFIG = {
+  version: CONFIG_VERSION,
   enabled: true,
   accent: "#d3aa61",
   bgDark: "#171817",
@@ -39,14 +49,14 @@ var DEFAULT_CONFIG = {
   image: "",
   videoId: "",
   videoName: "",
-  imageFit: "contain",
-  imageOpacity: 0.5,
+  imageFit: "cover",
+  imageOpacity: 1,
   imageBlur: 0,
-  transparency: 0.8,
-  wash: 0.58,
+  transparency: 0.95,
+  wash: 0.1,
   fontFamily: "",
-  textContrast: 0.85,
-  textStroke: 0
+  textContrast: 1,
+  textStroke: 0.45
 };
 var PRESETS = [
   { id: "amber", name: "\u6696\u7802", patch: { accent: "#d3aa61", bgDark: "#171817", bgLight: "#f6f5f1" } },
@@ -75,19 +85,28 @@ var FONTS = [
 ];
 var FITS = ["contain", "cover", "tile", "stretch"];
 var FIT_LABELS = {
-  contain: "\u81EA\u9002\u5E94\uFF08\u5B8C\u6574\u663E\u793A\uFF0C\u9ED8\u8BA4\uFF09",
-  cover: "\u586B\u6EE1\u7A97\u53E3\uFF08\u4F1A\u88C1\u6389\u8FB9\u7F18\uFF09",
+  contain: "\u81EA\u9002\u5E94\uFF08\u5B8C\u6574\u663E\u793A\uFF0C\u7559\u767D\uFF09",
+  cover: "\u586B\u6EE1\u7A97\u53E3\uFF08\u4F1A\u88C1\u6389\u8FB9\u7F18\uFF0C\u9ED8\u8BA4\uFF09",
   tile: "\u5E73\u94FA",
   stretch: "\u62C9\u4F38\u94FA\u6EE1\uFF08\u4F1A\u53D8\u5F62\uFF09"
 };
+function matchesPatch(config, patch) {
+  return Object.entries(patch).every(([key, value]) => config[key] === value);
+}
+function needsMigration(raw) {
+  if (typeof raw !== "object" || raw === null) return false;
+  return raw.version !== CONFIG_VERSION;
+}
 function normalizeConfig(raw) {
-  const input = typeof raw === "object" && raw !== null ? raw : {};
+  const stored = typeof raw === "object" && raw !== null ? raw : {};
+  const input = needsMigration(raw) ? { ...stored, ...Object.fromEntries(MIGRATED_KEYS.map((key) => [key, DEFAULT_CONFIG[key]])) } : stored;
   const clamp = (value, min, max, fallback) => {
     const n = typeof value === "number" && Number.isFinite(value) ? value : fallback;
     return Math.min(max, Math.max(min, n));
   };
   const color = (value, fallback) => typeof value === "string" && /^#[0-9a-fA-F]{3,8}$/.test(value.trim()) ? value.trim() : fallback;
   return {
+    version: CONFIG_VERSION,
     enabled: input.enabled !== false,
     accent: color(input.accent, DEFAULT_CONFIG.accent),
     bgDark: color(input.bgDark, DEFAULT_CONFIG.bgDark),
@@ -114,10 +133,11 @@ function normalizeConfig(raw) {
   };
 }
 
-// src/video-store.ts
+// src/library.ts
 var DB_NAME = "dsh-skin-studio";
 var DB_VERSION = 1;
 var STORE = "background";
+var MAX_ENTRIES = 24;
 function openDb() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -148,19 +168,54 @@ async function withStore(mode, run) {
     db.close();
   }
 }
-async function putVideo(id, blob) {
-  await withStore("readwrite", (store) => store.put(blob, id));
+function toEntry(id, value) {
+  if (value instanceof Blob) {
+    return { id, kind: "video", name: "\u80CC\u666F\u89C6\u9891", addedAt: 0, thumb: "", blob: value };
+  }
+  if (typeof value !== "object" || value === null) return void 0;
+  const raw = value;
+  if (raw.kind !== "image" && raw.kind !== "video") return void 0;
+  return {
+    id,
+    kind: raw.kind,
+    name: typeof raw.name === "string" ? raw.name : "",
+    addedAt: typeof raw.addedAt === "number" ? raw.addedAt : 0,
+    thumb: typeof raw.thumb === "string" ? raw.thumb : "",
+    uri: typeof raw.uri === "string" ? raw.uri : void 0,
+    blob: raw.blob instanceof Blob ? raw.blob : void 0
+  };
+}
+async function putEntry(entry) {
+  await withStore("readwrite", (store) => store.put(entry, entry.id));
+}
+async function getEntry(id) {
+  if (id === "") return void 0;
+  const value = await withStore("readonly", (store) => store.get(id));
+  return value === void 0 ? void 0 : toEntry(id, value);
+}
+async function listEntries() {
+  const keys = await withStore("readonly", (store) => store.getAllKeys());
+  const values = await withStore("readonly", (store) => store.getAll());
+  const entries = [];
+  for (const [index, key] of keys.entries()) {
+    const entry = toEntry(String(key), values[index]);
+    if (entry !== void 0) entries.push(entry);
+  }
+  return entries.sort((a, b) => b.addedAt - a.addedAt);
+}
+async function deleteEntry(id) {
+  await withStore("readwrite", (store) => store.delete(id));
+}
+async function trimLibrary(keepId) {
+  const entries = await listEntries();
+  if (entries.length <= MAX_ENTRIES) return;
+  for (const entry of entries.slice(MAX_ENTRIES)) {
+    if (entry.id === keepId) continue;
+    await deleteEntry(entry.id);
+  }
 }
 async function getVideo(id) {
-  const value = await withStore("readonly", (store) => store.get(id));
-  return value instanceof Blob ? value : void 0;
-}
-async function pruneVideos(keepId) {
-  const keys = await withStore("readonly", (store) => store.getAllKeys());
-  for (const key of keys) {
-    if (String(key) === keepId) continue;
-    await withStore("readwrite", (store) => store.delete(key));
-  }
+  return (await getEntry(id))?.blob;
 }
 
 // src/runtime.ts
@@ -431,17 +486,35 @@ var CSS = `
 .ss-preset { display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 6px; cursor: pointer;
   border: 1px solid var(--dsw-alias-border-l2, #8883); border-radius: 999px; font-size: 12px; background: transparent; color: inherit; }
 .ss-preset:hover { border-color: var(--skin-accent, #d3aa61); }
+/* \u9009\u4E2D\u6001\uFF1A\u53EA\u63CF\u8FB9\u4E0D\u586B\u8272\uFF0C\u586B\u8272\u4F1A\u76D6\u6389\u8272\u677F\u5706\u70B9\uFF0C\u53CD\u800C\u770B\u4E0D\u51FA\u9009\u7684\u662F\u54EA\u5957 */
+.ss-preset[data-on="1"] { border-color: var(--skin-accent, #d3aa61); color: var(--skin-accent, #d3aa61);
+  box-shadow: inset 0 0 0 1px var(--skin-accent, #d3aa61); font-weight: 640; }
 .ss-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
-.ss-thumb { position: relative; overflow: hidden; width: 100%; height: 84px; border-radius: 9px;
+.ss-lib { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px; margin-bottom: 12px; }
+.ss-lib-item { position: relative; aspect-ratio: 16 / 10; border-radius: 9px; overflow: hidden;
+  cursor: pointer; padding: 0; background-color: var(--dsw-alias-bg-layer-2, #8881);
   background-size: cover; background-position: center;
-  border: 1px solid var(--dsw-alias-border-l2, #8883); margin-bottom: 10px; }
-.ss-thumb-video { display: none; width: 100%; height: 100%; object-fit: cover; }
-.ss-thumb.has-video .ss-thumb-video { display: block; }
-.ss-thumb-name { display: none; position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 8px;
-  font-size: 11px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,0.55));
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ss-thumb.has-video .ss-thumb-name { display: block; }
-.ss-actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
+  border: 1px solid var(--dsw-alias-border-l2, #8883); }
+.ss-lib-item:hover { border-color: var(--skin-accent, #d3aa61); }
+.ss-lib-item[data-on="1"] { border-color: var(--skin-accent, #d3aa61);
+  box-shadow: inset 0 0 0 2px var(--skin-accent, #d3aa61); }
+.ss-lib-del { position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; line-height: 16px;
+  padding: 0; border-radius: 50%; font-size: 13px; cursor: pointer; opacity: 0; transition: opacity .15s;
+  border: none; background: rgba(0,0,0,0.55); color: #fff; }
+.ss-lib-item:hover .ss-lib-del { opacity: 1; }
+.ss-lib-tag { position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 6px; font-size: 10.5px;
+  color: #fff; background: linear-gradient(transparent, rgba(0,0,0,0.62));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.ss-lib-empty { grid-column: 1 / -1; padding: 14px; text-align: center; font-size: 12px; border-radius: 9px;
+  border: 1px dashed var(--dsw-alias-border-l3, #8884); color: var(--dsw-alias-label-tertiary, #888); }
+/* \u4FDD\u5B58\u6C38\u8FDC\u5728\u6700\u53F3\uFF1A\u8FD9\u6392\u65E2\u53EF\u80FD\u7559\u5728\u9762\u677F\u672B\u5C3E\uFF0C\u4E5F\u53EF\u80FD\u88AB\u6302\u8FDB\u5BF9\u8BDD\u6846\u5E95\u680F */
+.ss-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; width: 100%; }
+/* \u53EA\u6709\u7559\u5728\u9762\u677F\u91CC\u624D\u9700\u8981\u8DDF\u4E0A\u6587\u62C9\u5F00\u8DDD\u79BB\uFF1B\u6302\u8FDB\u5E95\u680F\u65F6\u90A3\u6BB5\u95F4\u8DDD\u7531\u5E95\u680F\u7684 padding \u7ED9 */
+.ss-panel > .ss-actions { margin-top: 16px; }
+.ss-actions .ss-hint { margin-right: auto; margin-left: 0; text-align: left; }
+.ss-btn:disabled { opacity: 0.45; cursor: default; }
+.ss-btn.primary:disabled:hover { opacity: 0.45; }
 .ss-hint { color: var(--dsw-alias-label-caption, inherit); font-size: 11.5px; margin-left: auto; }
 .ss-switch { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
 .ss-level-label { flex: 0 0 84px; color: var(--dsw-alias-label-secondary, inherit); }
@@ -459,6 +532,59 @@ function fontInstalled(stack) {
   const names = stack.match(/"[^"]+"/g) ?? [];
   return names.some(single);
 }
+async function uriToThumb(uri) {
+  const image = new Image();
+  image.src = uri;
+  await image.decode();
+  const scale = Math.min(1, 240 / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext("2d");
+  if (context === null) return "";
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.6);
+}
+async function videoThumb(blob) {
+  const url = URL.createObjectURL(blob);
+  try {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "metadata";
+    video.src = url;
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error("\u53D6\u9996\u5E27\u8D85\u65F6"));
+      }, 5e3);
+      const done = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      video.addEventListener("seeked", done, { once: true });
+      video.addEventListener("error", () => {
+        clearTimeout(timer);
+        reject(new Error("\u89C6\u9891\u8BFB\u53D6\u5931\u8D25"));
+      }, { once: true });
+      video.addEventListener("loadeddata", () => {
+        video.currentTime = 0.1;
+      }, { once: true });
+    });
+    if (video.videoWidth === 0) return "";
+    const scale = Math.min(1, 240 / Math.max(video.videoWidth, video.videoHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+    const context = canvas.getContext("2d");
+    if (context === null) return "";
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.6);
+  } catch {
+    return "";
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
@@ -474,6 +600,7 @@ function createSkinPanel(options) {
   };
   const set = (key, value) => {
     config = { ...config, [key]: value };
+    syncActive();
     preview();
   };
   const enabled = el("input", { type: "checkbox", id: "ss-enabled" });
@@ -530,6 +657,7 @@ function createSkinPanel(options) {
   root.appendChild(textRows);
   root.appendChild(el("h3", {}, "\u914D\u8272\u9884\u8BBE"));
   const presets = el("div", { class: "ss-presets" });
+  const presetButtons = [];
   for (const preset of PRESETS) {
     const dot = el("span", { class: "ss-dot" });
     dot.style.background = preset.patch.accent ?? DEFAULT_CONFIG.accent;
@@ -540,6 +668,7 @@ function createSkinPanel(options) {
       preview();
     });
     presets.appendChild(button);
+    presetButtons.push([button, preset.patch]);
   }
   root.appendChild(presets);
   root.appendChild(el("h3", {}, "\u989C\u8272"));
@@ -568,100 +697,155 @@ function createSkinPanel(options) {
     el("div", { class: "ss-ctl" }, bgDark, el("span", {}, "\u6697\u8272"), bgLight, el("span", {}, "\u6D45\u8272"))
   ));
   root.appendChild(el("h3", {}, "\u80CC\u666F"));
-  const thumb = el("div", { class: "ss-thumb" });
-  const thumbVideo = el("video", {});
-  thumbVideo.className = "ss-thumb-video";
-  thumbVideo.muted = true;
-  thumbVideo.defaultMuted = true;
-  thumbVideo.loop = true;
-  thumbVideo.autoplay = true;
-  thumbVideo.playsInline = true;
-  const thumbName = el("div", { class: "ss-thumb-name" });
-  thumb.append(thumbVideo, thumbName);
-  root.appendChild(thumb);
-  let thumbVideoId = "";
-  let thumbUrl;
-  const syncThumb = () => {
-    const hasVideo = config.videoId !== "";
-    thumb.classList.toggle("has-video", hasVideo);
-    thumb.style.backgroundImage = hasVideo || config.image === "" ? "none" : `url("${config.image}")`;
-    thumbName.textContent = config.videoName === "" ? "\u80CC\u666F\u89C6\u9891" : config.videoName;
-    if (!hasVideo) {
-      thumbVideoId = "";
-      thumbVideo.removeAttribute("src");
-      thumbVideo.load();
-      if (thumbUrl !== void 0) {
-        URL.revokeObjectURL(thumbUrl);
-        thumbUrl = void 0;
-      }
-      return;
-    }
-    if (thumbVideoId === config.videoId) return;
-    thumbVideoId = config.videoId;
-    void getVideo(config.videoId).then((blob) => {
-      if (blob === void 0 || thumbVideoId !== config.videoId) return;
-      if (thumbUrl !== void 0) URL.revokeObjectURL(thumbUrl);
-      thumbUrl = URL.createObjectURL(blob);
-      thumbVideo.src = thumbUrl;
-      void thumbVideo.play().catch(() => {
-      });
-    }).catch(() => {
-      status.textContent = "\u9884\u89C8\u52A0\u8F7D\u5931\u8D25";
-    });
-  };
   const file = el("input", {
     type: "file",
     accept: "image/*,video/mp4,video/webm",
     hidden: "hidden"
   });
-  const pick = el("button", { class: "ss-btn", type: "button" }, "\u9009\u62E9\u56FE\u7247\u6216\u89C6\u9891\u2026");
-  const clear = el("button", { class: "ss-btn", type: "button" }, "\u6E05\u9664");
+  const pick = el("button", { class: "ss-btn", type: "button" }, "\u6DFB\u52A0\u56FE\u7247\u6216\u89C6\u9891\u2026");
+  const clear = el("button", { class: "ss-btn", type: "button" }, "\u4E0D\u7528\u80CC\u666F");
   const status = el("span", { class: "ss-hint" }, "");
   pick.addEventListener("click", () => {
     file.click();
   });
   const megabytes = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  const takeVideo = (chosen) => {
+  const lib = el("div", { class: "ss-lib" });
+  root.appendChild(lib);
+  let entries = [];
+  const selectedId = () => {
+    if (config.videoId !== "") return config.videoId;
+    if (config.image === "") return "";
+    return entries.find((entry) => entry.uri === config.image)?.id ?? "";
+  };
+  const selectEntry = (entry) => {
+    config = entry.kind === "video" ? { ...config, videoId: entry.id, videoName: entry.name, image: "" } : { ...config, image: entry.uri ?? "", videoId: "", videoName: "" };
+    syncInputs();
+    preview();
+  };
+  const renderLibrary = () => {
+    lib.replaceChildren();
+    if (entries.length === 0) {
+      lib.appendChild(el("div", { class: "ss-lib-empty" }, "\u8FD8\u6CA1\u6DFB\u52A0\u8FC7\u80CC\u666F\uFF0C\u70B9\u4E0B\u9762\u7684\u6309\u94AE\u9009\u4E00\u5F20"));
+      return;
+    }
+    const current = selectedId();
+    for (const entry of entries) {
+      const item = el("button", { class: "ss-lib-item", type: "button", title: entry.name });
+      if (entry.id === current) item.dataset.on = "1";
+      if (entry.thumb !== "") item.style.backgroundImage = `url("${entry.thumb}")`;
+      item.appendChild(el(
+        "span",
+        { class: "ss-lib-tag" },
+        entry.kind === "video" ? `\u89C6\u9891 ${entry.name}` : entry.name
+      ));
+      const del = el("button", { class: "ss-lib-del", type: "button", title: "\u4ECE\u56FE\u5E93\u5220\u9664" }, "\xD7");
+      del.addEventListener("click", (event) => {
+        event.stopPropagation();
+        void deleteEntry(entry.id).then(() => {
+          if (entry.id === selectedId()) {
+            config = { ...config, image: "", videoId: "", videoName: "" };
+            preview();
+          }
+          return refreshLibrary();
+        }).catch((error) => {
+          status.textContent = `\u5220\u9664\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`;
+        });
+      });
+      item.appendChild(del);
+      item.addEventListener("click", () => {
+        selectEntry(entry);
+      });
+      lib.appendChild(item);
+    }
+  };
+  const refreshLibrary = async () => {
+    entries = await listEntries();
+    renderLibrary();
+  };
+  void (async () => {
+    entries = await listEntries();
+    if (config.image !== "" && !entries.some((entry) => entry.uri === config.image)) {
+      await putEntry({
+        id: `bg-${String(Date.now())}`,
+        kind: "image",
+        name: "\u5F53\u524D\u80CC\u666F",
+        addedAt: Date.now(),
+        thumb: await uriToThumb(config.image),
+        uri: config.image
+      });
+    }
+    await refreshLibrary();
+  })().catch(() => {
+    status.textContent = "\u56FE\u5E93\u8BFB\u53D6\u5931\u8D25";
+  });
+  const takeVideo = async (chosen) => {
     if (chosen.size > MAX_VIDEO_BYTES) {
       status.textContent = `\u89C6\u9891 ${megabytes(chosen.size)}\uFF0C\u8D85\u8FC7\u4E0A\u9650 ${megabytes(MAX_VIDEO_BYTES)}`;
       return;
     }
-    status.textContent = "\u4FDD\u5B58\u4E2D\u2026";
+    status.textContent = "\u5165\u5E93\u4E2D\u2026";
     const id = `bg-${String(Date.now())}`;
-    void putVideo(id, chosen).then(() => {
-      config = { ...config, videoId: id, videoName: chosen.name, image: "" };
-      syncInputs();
-      preview();
-      status.textContent = `\u5DF2\u4FDD\u5B58 ${megabytes(chosen.size)}`;
-      void pruneVideos(id);
-    }).catch((error) => {
-      status.textContent = `\u4FDD\u5B58\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`;
+    await putEntry({
+      id,
+      kind: "video",
+      name: chosen.name,
+      addedAt: Date.now(),
+      thumb: await videoThumb(chosen),
+      blob: chosen
     });
+    await refreshLibrary();
+    selectEntry(entries.find((entry) => entry.id === id) ?? {
+      id,
+      kind: "video",
+      name: chosen.name,
+      addedAt: Date.now(),
+      thumb: ""
+    });
+    status.textContent = `\u5DF2\u5165\u5E93 ${megabytes(chosen.size)}`;
+    await trimLibrary(id);
+    await refreshLibrary();
+  };
+  const takeImage = async (chosen) => {
+    status.textContent = "\u5904\u7406\u4E2D\u2026";
+    const uri = await imageToDataUri(chosen);
+    const id = `bg-${String(Date.now())}`;
+    await putEntry({
+      id,
+      kind: "image",
+      name: chosen.name,
+      addedAt: Date.now(),
+      thumb: await imageToDataUri(chosen, 240, 0.6),
+      uri
+    });
+    await refreshLibrary();
+    selectEntry(entries.find((entry) => entry.id === id) ?? {
+      id,
+      kind: "image",
+      name: chosen.name,
+      addedAt: Date.now(),
+      thumb: "",
+      uri
+    });
+    status.textContent = `\u5DF2\u5165\u5E93\uFF0C\u538B\u7F29\u81F3 ${Math.round(uri.length / 1024)} KB`;
+    await trimLibrary(id);
+    await refreshLibrary();
   };
   file.addEventListener("change", () => {
     const chosen = file.files?.[0];
     if (chosen === void 0) return;
     file.value = "";
-    if (chosen.type.startsWith("video/")) {
-      takeVideo(chosen);
-      return;
-    }
-    status.textContent = "\u5904\u7406\u4E2D\u2026";
-    void imageToDataUri(chosen).then((uri) => {
-      config = { ...config, image: uri, videoId: "", videoName: "" };
-      syncInputs();
-      preview();
-      void pruneVideos("");
-      status.textContent = `\u5DF2\u538B\u7F29\u81F3 ${Math.round(uri.length / 1024)} KB`;
-    }).catch((error) => {
+    setBusy(true);
+    const work = chosen.type.startsWith("video/") ? takeVideo(chosen) : takeImage(chosen);
+    void work.catch((error) => {
       status.textContent = `\u8BFB\u53D6\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`;
+    }).finally(() => {
+      setBusy(false);
     });
   });
   clear.addEventListener("click", () => {
     config = { ...config, image: "", videoId: "", videoName: "" };
     syncInputs();
     preview();
-    void pruneVideos("");
     status.textContent = "";
   });
   root.appendChild(el(
@@ -706,6 +890,7 @@ function createSkinPanel(options) {
   ));
   const levels = el("div", { class: "ss-presets" });
   levels.appendChild(el("span", { class: "ss-level-label" }, "\u5F3A\u5EA6"));
+  const levelButtons = [];
   for (const level of BACKGROUND_LEVELS) {
     const button = el("button", { class: "ss-preset", type: "button" }, level.name);
     button.addEventListener("click", () => {
@@ -714,6 +899,7 @@ function createSkinPanel(options) {
       preview();
     });
     levels.appendChild(button);
+    levelButtons.push([button, level.patch]);
   }
   root.appendChild(levels);
   const percent = (value) => `${String(Math.round(value * 100))}%`;
@@ -733,10 +919,13 @@ function createSkinPanel(options) {
   const transparency = slider("\u754C\u9762\u900F\u660E", "transparency", 0, 1, 0.01, percent);
   const save2 = el("button", { class: "ss-btn primary", type: "button" }, "\u4FDD\u5B58");
   const reset = el("button", { class: "ss-btn", type: "button" }, "\u6062\u590D\u9ED8\u8BA4");
-  const saveHint = el("span", { class: "ss-hint" }, "\u6539\u52A8\u5373\u65F6\u9884\u89C8\uFF0C\u4FDD\u5B58\u540E\u5BF9\u6240\u6709\u7A97\u53E3\u751F\u6548");
+  const saveHint = el("span", { class: "ss-hint" }, "");
+  let savedSnapshot = JSON.stringify(options.initial);
   save2.addEventListener("click", () => {
     save2.textContent = "\u4FDD\u5B58\u4E2D\u2026";
     void Promise.resolve(options.onSave(config)).then(() => {
+      savedSnapshot = JSON.stringify(config);
+      syncDirty();
       options.onDone?.();
       save2.textContent = "\u5DF2\u4FDD\u5B58";
       setTimeout(() => {
@@ -747,11 +936,25 @@ function createSkinPanel(options) {
     });
   });
   reset.addEventListener("click", () => {
-    config = { ...DEFAULT_CONFIG };
+    config = { ...DEFAULT_CONFIG, image: config.image, videoId: config.videoId, videoName: config.videoName };
     syncInputs();
     preview();
   });
-  root.appendChild(el("div", { class: "ss-actions" }, save2, reset, saveHint));
+  (options.actionsHost ?? root).appendChild(el("div", { class: "ss-actions" }, saveHint, reset, save2));
+  function setBusy(value) {
+    save2.disabled = value;
+    pick.disabled = value;
+  }
+  function syncActive() {
+    for (const [button, patch] of [...presetButtons, ...levelButtons]) {
+      if (matchesPatch(config, patch)) button.dataset.on = "1";
+      else button.removeAttribute("data-on");
+    }
+    syncDirty();
+  }
+  function syncDirty() {
+    saveHint.textContent = JSON.stringify(config) === savedSnapshot ? "\u6539\u52A8\u5373\u65F6\u9884\u89C8\uFF0C\u4FDD\u5B58\u540E\u5BF9\u6240\u6709\u7A97\u53E3\u751F\u6548" : "\u6709\u6539\u52A8\u5C1A\u672A\u4FDD\u5B58\uFF0C\u76F4\u63A5\u5173\u95ED\u4F1A\u8FD8\u539F";
+  }
   function syncInputs() {
     enabled.checked = config.enabled;
     accent.value = config.accent;
@@ -759,7 +962,8 @@ function createSkinPanel(options) {
     bgLight.value = config.bgLight;
     fit.value = config.imageFit;
     font.value = config.fontFamily;
-    syncThumb();
+    renderLibrary();
+    syncActive();
     for (const [input, value] of [
       [imageOpacity, config.imageOpacity],
       [imageBlur, config.imageBlur],
@@ -1300,17 +1504,22 @@ var ICON_PALETTE = "M12 2a10 10 0 1 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4
 function load() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw === null ? { ...DEFAULT_CONFIG } : normalizeConfig(JSON.parse(raw));
+    if (raw === null) return { ...DEFAULT_CONFIG };
+    const stored = JSON.parse(raw);
+    const config = normalizeConfig(stored);
+    if (needsMigration(stored)) {
+      try {
+        save(config);
+      } catch {
+      }
+    }
+    return config;
   } catch {
     return { ...DEFAULT_CONFIG };
   }
 }
 function save(config) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-  } catch (error) {
-    console.warn("skin-studio: \u914D\u7F6E\u4FDD\u5B58\u5931\u8D25", error);
-  }
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
 }
 function openSkinPanel(runtime) {
   if (document.querySelector(".skin-dialog-mask") !== null) return;
@@ -1339,7 +1548,10 @@ function openSkinPanel(runtime) {
     border: "1px solid var(--dsw-alias-border-l2, #8883)",
     boxShadow: "0 24px 70px rgba(0,0,0,0.3)"
   });
+  let saved = load();
+  let persisted = false;
   const close = () => {
+    if (!persisted) runtime.apply(saved);
     mask.remove();
     document.removeEventListener("keydown", onKey);
   };
@@ -1377,18 +1589,33 @@ function openSkinPanel(runtime) {
   closeBtn.addEventListener("click", close);
   head.append(title, closeBtn);
   const scroll = document.createElement("div");
-  Object.assign(scroll.style, { padding: "16px 18px 20px", overflowY: "auto" });
+  Object.assign(scroll.style, {
+    padding: "16px 18px 20px",
+    overflowY: "auto",
+    flex: "1 1 auto",
+    minHeight: "0"
+  });
+  const foot = document.createElement("div");
+  Object.assign(foot.style, {
+    display: "flex",
+    flex: "none",
+    padding: "12px 18px",
+    borderTop: "1px solid var(--dsw-alias-border-l1, #8882)"
+  });
   scroll.appendChild(createSkinPanel({
-    initial: load(),
+    initial: saved,
     onPreview: (config) => {
       runtime.apply(config);
     },
     onSave: (config) => {
       save(config);
+      saved = config;
+      persisted = true;
     },
-    onDone: close
+    onDone: close,
+    actionsHost: foot
   }));
-  dialog.append(head, scroll);
+  dialog.append(head, scroll, foot);
   mask.appendChild(dialog);
   document.body.appendChild(mask);
 }

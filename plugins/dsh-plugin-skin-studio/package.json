@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-skin-studio",
   "description": "DeepSeek Harness 皮肤插件：换背景图或视频、字体、配色与透明度",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "type": "module",
   "license": "MIT",
   "exports": {

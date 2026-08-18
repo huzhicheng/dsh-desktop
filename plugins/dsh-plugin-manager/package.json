@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-manager",
   "description": "DeepSeek Harness 插件管理：在界面里安装、卸载、查看插件",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "license": "MIT",
   "exports": {

@@ -1,6 +1,27 @@
 /** 皮肤配置：一份配置完整描述一套外观，可持久化、可分享。 */
 
+/**
+ * 配置版本。
+ *
+ * 改默认值时加一。老配置里那些字段是存过的实际值，不是「没设置」，合并默认值时
+ * 不会被覆盖——结果就是改了默认值只对全新安装生效，老用户还得自己手动调一遍。
+ * 有了版本号就能做一次性迁移，把这一版调整的那组值推给老配置。
+ */
+export const CONFIG_VERSION = 2
+
+/**
+ * 每次升版要跟上的字段。
+ *
+ * 只列这一版真正改了默认值的那组（背景呈现强度与适配方式），配色、字体、
+ * 背景素材这些是用户自己挑的，不在迁移范围内。
+ */
+const MIGRATED_KEYS = [
+  'imageFit', 'imageOpacity', 'wash', 'transparency', 'textContrast', 'textStroke',
+] as const
+
 export interface SkinConfig {
+  /** 配置版本，见 CONFIG_VERSION。 */
+  version: number
   /** 是否启用皮肤。关掉即恢复 dsh 原生外观。 */
   enabled: boolean
   /** 强调色（按钮、链接、选中态）。 */
@@ -9,10 +30,15 @@ export interface SkinConfig {
   bgDark: string
   /** 浅色底色。 */
   bgLight: string
-  /** 背景图，data URI；空字符串表示纯色底。 */
+  /**
+   * 背景图，压缩后的 data URI；空字符串表示纯色底。
+   *
+   * 图本身另有一份存在图库里（见 library），这里留一份是为了让运行时同步取用，
+   * 不必等一次异步读库才画得出背景。
+   */
   image: string
   /**
-   * 背景视频的 id；空字符串表示没有视频。视频本体存在 IndexedDB（见 video-store），
+   * 背景视频的 id；空字符串表示没有视频。视频本体存在 IndexedDB（见 library），
    * 配置里只留标识——几十 MB 的二进制既塞不进 localStorage，也不该跟着配置到处走。
    * 有视频时它优先于背景图。
    */
@@ -22,10 +48,10 @@ export interface SkinConfig {
   /**
    * 背景适配方式。
    *
-   * 默认 contain：整张图/整段视频都看得见，长宽比对不上时四周留白，
-   * 留白处由那层放大模糊的同图（视频则是它的一帧）垫底，不会露出空底。
-   * cover 填满窗口但会裁掉伸出去的部分——竖图放进宽窗口只剩一条横切片，
-   * 所以不适合当默认；tile 原尺寸平铺，适合纹理小图；stretch 硬拉，会变形。
+   * 默认 cover：填满窗口，长宽比对不上时裁掉伸出去的部分。绝大多数人选的是
+   * 横版壁纸，跟窗口比例接近，铺满才是他们要的效果；contain 会留出四圈留白，
+   * 第一眼像没设置成功。竖图放进宽窗口只剩一条横切片，那种情况改用 contain。
+   * tile 原尺寸平铺，适合纹理小图；stretch 硬拉，会变形。
    */
   imageFit: 'cover' | 'contain' | 'tile' | 'stretch'
   /** 背景（图或视频）不透明度 0~1。 */
@@ -53,7 +79,15 @@ export interface SkinConfig {
   textStroke: number
 }
 
+/*
+ * 默认值取「清晰」那一档。
+ *
+ * 之前默认偏保守（背景浓度 50%、蒙版 58%），设完背景图第一眼几乎看不出变化，
+ * 用户以为没生效。既然人是特地来设背景的，就默认让背景看得见，觉得晃眼再往回调。
+ * 这几个值必须与 BACKGROUND_LEVELS 里的 clear 一致，否则一进面板「清晰」不会高亮。
+ */
 export const DEFAULT_CONFIG: SkinConfig = {
+  version: CONFIG_VERSION,
   enabled: true,
   accent: '#d3aa61',
   bgDark: '#171817',
@@ -61,14 +95,14 @@ export const DEFAULT_CONFIG: SkinConfig = {
   image: '',
   videoId: '',
   videoName: '',
-  imageFit: 'contain',
-  imageOpacity: 0.5,
+  imageFit: 'cover',
+  imageOpacity: 1,
   imageBlur: 0,
-  transparency: 0.8,
-  wash: 0.58,
+  transparency: 0.95,
+  wash: 0.1,
   fontFamily: '',
-  textContrast: 0.85,
-  textStroke: 0,
+  textContrast: 1,
+  textStroke: 0.45,
 }
 
 /** 内置预设，用户不选图也能一键换个样子。 */
@@ -131,15 +165,35 @@ export const FITS: readonly SkinConfig['imageFit'][] = ['contain', 'cover', 'til
 
 /** 适配方式的中文名，界面直接用。 */
 export const FIT_LABELS: Record<SkinConfig['imageFit'], string> = {
-  contain: '自适应（完整显示，默认）',
-  cover: '填满窗口（会裁掉边缘）',
+  contain: '自适应（完整显示，留白）',
+  cover: '填满窗口（会裁掉边缘，默认）',
   tile: '平铺',
   stretch: '拉伸铺满（会变形）',
 }
 
+/**
+ * 判断当前配置是否正落在某个预设/档位上，界面据此高亮。
+ *
+ * 只比对 patch 里出现的字段：档位管的是背景那几个量，用户改了字体或强调色
+ * 不该让「清晰」掉高亮。
+ */
+export function matchesPatch(config: SkinConfig, patch: Partial<SkinConfig>): boolean {
+  return Object.entries(patch).every(([key, value]) => config[key as keyof SkinConfig] === value)
+}
+
+/** 存下来的这份配置是不是还没跟上当前版本。 */
+export function needsMigration(raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null) return false
+  return (raw as Partial<SkinConfig>).version !== CONFIG_VERSION
+}
+
 /** 合并用户配置与默认值，并把越界值夹回合法范围。 */
 export function normalizeConfig(raw: unknown): SkinConfig {
-  const input = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<SkinConfig>
+  const stored = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<SkinConfig>
+  // 老版本的配置：把这一版调整过默认值的那几项换成新默认，其余原样保留
+  const input = needsMigration(raw)
+    ? { ...stored, ...Object.fromEntries(MIGRATED_KEYS.map(key => [key, DEFAULT_CONFIG[key]])) }
+    : stored
   const clamp = (value: unknown, min: number, max: number, fallback: number): number => {
     const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback
     return Math.min(max, Math.max(min, n))
@@ -148,6 +202,7 @@ export function normalizeConfig(raw: unknown): SkinConfig {
     typeof value === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(value.trim()) ? value.trim() : fallback
 
   return {
+    version: CONFIG_VERSION,
     enabled: input.enabled !== false,
     accent: color(input.accent, DEFAULT_CONFIG.accent),
     bgDark: color(input.bgDark, DEFAULT_CONFIG.bgDark),

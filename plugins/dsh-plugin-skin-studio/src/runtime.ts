@@ -6,7 +6,7 @@
  */
 
 import type { SkinConfig } from './config'
-import { getVideo } from './video-store'
+import { getVideo } from './library'
 
 const STYLE_ID = 'skin-studio-css'
 const ART_ID = 'skin-studio-art'

@@ -52,8 +52,10 @@ const CSS = `
   border-bottom: 1px solid var(--dsw-alias-border-l1, #8882); }
 .pm-title { font-size: 15px; font-weight: 650; }
 .pm-sub { color: var(--dsw-alias-label-tertiary, #888); font-size: 12px; }
-.pm-close { margin-left: auto; }
-.pm-body { padding: 16px 18px 20px; overflow-y: auto; }
+.pm-body { padding: 16px 18px 20px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+/* 底栏固定不滚，关闭键落在右下角——和皮肤设置、远程控制那两个窗口保持一致 */
+.pm-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: none;
+  padding: 12px 18px; border-top: 1px solid var(--dsw-alias-border-l1, #8882); }
 .pm-h { font-size: 12px; font-weight: 650; color: var(--dsw-alias-label-tertiary, #888); margin: 0 0 9px; }
 .pm-h:not(:first-child) { margin-top: 22px; }
 .pm-card { display: flex; gap: 12px; align-items: flex-start; padding: 11px 13px; margin-bottom: 7px;
@@ -144,13 +146,10 @@ export function openPluginManager(settings: PluginSettingsProvider = {}): void {
   document.addEventListener('keydown', onKey)
   mask.addEventListener('click', (event) => { if (event.target === mask) close() })
 
-  const closeBtn = el('button', { class: 'pm-btn pm-close', type: 'button' }, '关闭')
-  closeBtn.addEventListener('click', close)
   dialog.appendChild(el('div', { class: 'pm-head' },
     el('div', {},
       el('div', { class: 'pm-title' }, '插件管理'),
-      el('div', { class: 'pm-sub' }, '管理当前 web profile 的插件组装')),
-    closeBtn))
+      el('div', { class: 'pm-sub' }, '管理当前 web profile 的插件组装'))))
 
   type Tab = 'installed' | 'runtime' | 'install'
   let tab: Tab = 'installed'
@@ -162,6 +161,10 @@ export function openPluginManager(settings: PluginSettingsProvider = {}): void {
   dialog.appendChild(tabs)
   const body = el('div', { class: 'pm-body' })
   dialog.appendChild(body)
+
+  const closeBtn = el('button', { class: 'pm-btn primary', type: 'button' }, '关闭')
+  closeBtn.addEventListener('click', close)
+  dialog.appendChild(el('div', { class: 'pm-foot' }, closeBtn))
 
   const banner = el('div', { class: 'pm-banner' })
   banner.style.display = 'none'

@@ -8,7 +8,7 @@
  * 皮肤本就是纯展示偏好，存本地既合适也不受这条限制。
  */
 
-import { DEFAULT_CONFIG, normalizeConfig, type SkinConfig } from '../config'
+import { DEFAULT_CONFIG, needsMigration, normalizeConfig, type SkinConfig } from '../config'
 import { createSkinPanel } from '../panel'
 import { createSkinRuntime } from '../runtime'
 import {
@@ -25,19 +25,28 @@ const ICON_PALETTE = 'M12 2a10 10 0 1 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-
 function load(): SkinConfig {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
-    return raw === null ? { ...DEFAULT_CONFIG } : normalizeConfig(JSON.parse(raw))
+    if (raw === null) return { ...DEFAULT_CONFIG }
+    const stored: unknown = JSON.parse(raw)
+    const config = normalizeConfig(stored)
+    // 迁移过就立刻写回，否则每次启动都要再迁一遍，用户也看不出配置已经换代了
+    if (needsMigration(stored)) {
+      try { save(config) } catch { /* 存不下不影响本次使用，下次启动再试 */ }
+    }
+    return config
   } catch {
     return { ...DEFAULT_CONFIG }
   }
 }
 
+/**
+ * 写入配置。
+ *
+ * 失败要往外抛，不能吞。吞掉的话按钮照样显示「已保存」、对话框照样关闭，
+ * 用户直到下次重启才发现设置没了，而且完全不知道为什么。面板会接住这个异常
+ * 并把按钮改成「保存失败」，参数也留在面板里不丢。
+ */
 function save(config: SkinConfig): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
-  } catch (error) {
-    // 存不下（隐私模式或超出配额）不该让界面崩掉，皮肤本身已经生效了
-    console.warn('skin-studio: 配置保存失败', error)
-  }
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
 }
 
 interface SlotsApi {
@@ -69,7 +78,18 @@ function openSkinPanel(runtime: ReturnType<typeof createSkinRuntime>): void {
     border: '1px solid var(--dsw-alias-border-l2, #8883)',
     boxShadow: '0 24px 70px rgba(0,0,0,0.3)',
   })
+  /*
+   * 打开时记下已保存的那份配置。
+   *
+   * 面板是改动即时预览的，没点保存就关掉时必须把预览撤回到这份，否则界面上
+   * 效果还在、下次重启却消失了——用户会以为「设过的背景自己没了」。撤回之后
+   * 「看到的」永远等于「存下的」，没保存这件事当场就看得出来。
+   */
+  let saved = load()
+  let persisted = false
+
   const close = (): void => {
+    if (!persisted) runtime.apply(saved)
     mask.remove()
     document.removeEventListener('keydown', onKey)
   }
@@ -97,15 +117,31 @@ function openSkinPanel(runtime: ReturnType<typeof createSkinRuntime>): void {
   head.append(title, closeBtn)
 
   const scroll = document.createElement('div')
-  Object.assign(scroll.style, { padding: '16px 18px 20px', overflowY: 'auto' })
+  // minHeight 0 是必须的：flex 子项默认不小于内容高度，不写这条底栏会被挤出对话框
+  Object.assign(scroll.style, {
+    padding: '16px 18px 20px', overflowY: 'auto', flex: '1 1 auto', minHeight: '0',
+  })
+
+  // 底栏固定不滚：面板很长，按钮跟着内容滚走的话，滚到中间就找不到保存了
+  const foot = document.createElement('div')
+  Object.assign(foot.style, {
+    display: 'flex', flex: 'none', padding: '12px 18px',
+    borderTop: '1px solid var(--dsw-alias-border-l1, #8882)',
+  })
+
   scroll.appendChild(createSkinPanel({
-    initial: load(),
+    initial: saved,
     onPreview: (config) => { runtime.apply(config) },
-    onSave: (config) => { save(config) },
+    onSave: (config) => {
+      save(config)
+      saved = config
+      persisted = true
+    },
     onDone: close,
+    actionsHost: foot,
   }))
 
-  dialog.append(head, scroll)
+  dialog.append(head, scroll, foot)
   mask.appendChild(dialog)
   document.body.appendChild(mask)
 }

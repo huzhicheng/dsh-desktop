@@ -44,8 +44,10 @@ var CSS = `
   border-bottom: 1px solid var(--dsw-alias-border-l1, #8882); }
 .pm-title { font-size: 15px; font-weight: 650; }
 .pm-sub { color: var(--dsw-alias-label-tertiary, #888); font-size: 12px; }
-.pm-close { margin-left: auto; }
-.pm-body { padding: 16px 18px 20px; overflow-y: auto; }
+.pm-body { padding: 16px 18px 20px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+/* \u5E95\u680F\u56FA\u5B9A\u4E0D\u6EDA\uFF0C\u5173\u95ED\u952E\u843D\u5728\u53F3\u4E0B\u89D2\u2014\u2014\u548C\u76AE\u80A4\u8BBE\u7F6E\u3001\u8FDC\u7A0B\u63A7\u5236\u90A3\u4E24\u4E2A\u7A97\u53E3\u4FDD\u6301\u4E00\u81F4 */
+.pm-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: none;
+  padding: 12px 18px; border-top: 1px solid var(--dsw-alias-border-l1, #8882); }
 .pm-h { font-size: 12px; font-weight: 650; color: var(--dsw-alias-label-tertiary, #888); margin: 0 0 9px; }
 .pm-h:not(:first-child) { margin-top: 22px; }
 .pm-card { display: flex; gap: 12px; align-items: flex-start; padding: 11px 13px; margin-bottom: 7px;
@@ -126,8 +128,6 @@ function openPluginManager(settings = {}) {
   mask.addEventListener("click", (event) => {
     if (event.target === mask) close();
   });
-  const closeBtn = el("button", { class: "pm-btn pm-close", type: "button" }, "\u5173\u95ED");
-  closeBtn.addEventListener("click", close);
   dialog.appendChild(el(
     "div",
     { class: "pm-head" },
@@ -136,8 +136,7 @@ function openPluginManager(settings = {}) {
       {},
       el("div", { class: "pm-title" }, "\u63D2\u4EF6\u7BA1\u7406"),
       el("div", { class: "pm-sub" }, "\u7BA1\u7406\u5F53\u524D web profile \u7684\u63D2\u4EF6\u7EC4\u88C5")
-    ),
-    closeBtn
+    )
   ));
   let tab = "installed";
   let snapshot;
@@ -147,6 +146,9 @@ function openPluginManager(settings = {}) {
   dialog.appendChild(tabs);
   const body = el("div", { class: "pm-body" });
   dialog.appendChild(body);
+  const closeBtn = el("button", { class: "pm-btn primary", type: "button" }, "\u5173\u95ED");
+  closeBtn.addEventListener("click", close);
+  dialog.appendChild(el("div", { class: "pm-foot" }, closeBtn));
   const banner = el("div", { class: "pm-banner" });
   banner.style.display = "none";
   const output = el("div", { class: "pm-out" });

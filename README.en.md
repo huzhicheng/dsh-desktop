@@ -15,6 +15,10 @@
   <a href="docs/development.md">Development</a>
 </p>
 
+<p align="center">
+  <img src="docs/images/main-window-macos.jpg" width="820" alt="DSH Desktop main window: custom background with the Plugins, Skin and Remote Control entries in the sidebar">
+</p>
+
 ---
 
 > A community project, not an official release. DeepSeek Harness is currently in developer preview.
