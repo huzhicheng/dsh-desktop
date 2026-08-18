@@ -69,9 +69,7 @@ xattr -cr "/Applications/DSH Desktop.app"
 
 The first launch unpacks the bundled Harness, so give it a few seconds. Once the UI loads you'll find four entries in the lower left: **插件 (Plugins) / 皮肤 (Skin) / 远程控制 (Remote control) / 设置 (Settings)**.
 
-You'll need to enter a DeepSeek API key once before you can start a conversation.
-
-On launch the app starts a local service and loads the UI. The first run unpacks the bundled Harness, so give it a few seconds.
+On first launch you'll be asked for a DeepSeek API key; enter it once and you can start a conversation. To change it later, go to **设置 (Settings) → 模型 (Models) → DeepSeek → 编辑 (Edit)**.
 
 ## Theming
 
