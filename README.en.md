@@ -12,6 +12,7 @@
 <p align="center">
   <a href="README.md">中文</a> ·
   <a href="https://github.com/huzhicheng/dsh-desktop/releases">Download</a> ·
+  <a href="https://mp.weixin.qq.com/s?__biz=MzAxMjA0MDk2OA==&mid=2449480133&idx=1&sn=25ba03bd02369eaf8c518e8624236520">Walkthrough (Chinese)</a> ·
   <a href="docs/development.md">Development</a>
 </p>
 
@@ -99,6 +100,12 @@ In chat:
 > **Anyone who can message the bot can run commands on your machine.**
 > The allowlist is the only boundary — add yourself and people you actually trust, nobody else.
 > Permissions default to read-only; every write asks first. On macOS the "writable inside the workspace" mode does not reliably block escapes, so use read-only if you need a hard boundary.
+
+## Detailed walkthrough
+
+The sections above are a quick reference. For a full walkthrough with screenshots — installing plugins, what each skin setting actually does, and the whole Feishu flow from QR scan to running tasks from chat — see this article (in Chinese):
+
+[**这个 DeepSeek Harness 桌面端有点东西，支持插件管理、皮肤管理、还有飞书远程控制！**](https://mp.weixin.qq.com/s?__biz=MzAxMjA0MDk2OA==&mid=2449480133&idx=1&sn=25ba03bd02369eaf8c518e8624236520)
 
 ## Known limitations
 

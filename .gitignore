@@ -9,3 +9,6 @@ vendor/seed/
 # 插件间共用 esbuild 的软链，不进仓库
 plugins/*/node_modules
 vendor/pnpm/
+
+# 别的任务在这个目录里生成的产物，不属于本仓库
+output/

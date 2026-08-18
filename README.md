@@ -12,6 +12,7 @@
 <p align="center">
   <a href="README.en.md">English</a> ·
   <a href="https://github.com/huzhicheng/dsh-desktop/releases">下载</a> ·
+  <a href="https://mp.weixin.qq.com/s?__biz=MzAxMjA0MDk2OA==&mid=2449480133&idx=1&sn=25ba03bd02369eaf8c518e8624236520">使用教程</a> ·
   <a href="docs/development.md">开发文档</a>
 </p>
 
@@ -98,6 +99,12 @@ xattr -cr "/Applications/DSH Desktop.app"
 > **能给机器人发消息的人，等于能在你的电脑上执行命令。**
 > 白名单是唯一的人员边界，只放你自己和确实信任的人。
 > 权限默认「只读」，任何写入都要你点头。macOS 上「工作目录内可写」的越界拦截并不可靠，真要拦住请用只读。
+
+## 详细教程
+
+上面三节是速查。带截图的完整走查，包括插件怎么装、皮肤各项参数的实际效果、飞书从扫码到聊天派活的全过程，看这篇：
+
+[**这个 DeepSeek Harness 桌面端有点东西，支持插件管理、皮肤管理、还有飞书远程控制！**](https://mp.weixin.qq.com/s?__biz=MzAxMjA0MDk2OA==&mid=2449480133&idx=1&sn=25ba03bd02369eaf8c518e8624236520)
 
 ## 已知限制
 
