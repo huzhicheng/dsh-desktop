@@ -57,9 +57,22 @@ function verifyStaged(staging) {
     join(modules, `@koromix/koffi-${targetPlatform}-${targetArch}`),
   ]
   if (targetPlatform === 'win32') {
+    /*
+     * Windows 只校验 ConPTY 这一套。
+     *
+     * 早先还要求 winpty.dll，那是 node-pty 的旧后端；1.2.0-beta.15 起已经不发它了
+     * （改成纯 ConPTY，实际产物是 conpty.node 加 conpty/ 目录下的 dll 与 OpenConsole）。
+     * 继续要求它会让 Windows 包在上游换代当天直接构建失败。
+     *
+     * conpty/ 那两个文件必须一起查：少了它们 conpty.node 能加载但起不了终端，
+     * 而这个失败要到用户真正开一个终端会话时才暴露。
+     */
+    const prebuilds = join(modules, `node-pty/prebuilds/win32-${targetArch}`)
     required.push(
-      join(modules, `node-pty/prebuilds/win32-${targetArch}/conpty.node`),
-      join(modules, `node-pty/prebuilds/win32-${targetArch}/winpty.dll`),
+      join(prebuilds, 'conpty.node'),
+      join(prebuilds, 'conpty_console_list.node'),
+      join(prebuilds, 'conpty/conpty.dll'),
+      join(prebuilds, 'conpty/OpenConsole.exe'),
     )
   }
   const missing = required.filter(path => !existsSync(path))
