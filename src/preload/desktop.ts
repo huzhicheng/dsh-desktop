@@ -15,4 +15,13 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   openRemoteControl() {
     ipcRenderer.send('desktop:open-remote-control')
   },
+  /**
+   * 打开应用发布页（外部浏览器）。
+   *
+   * 侧栏「设置」右端那个新版本徽标由壳注入到页面里，点击时经这条通道回到壳。
+   * 徽标是注入的普通 DOM，够不到 ipcRenderer，只能走 contextBridge 暴露的方法。
+   */
+  openReleasePage() {
+    ipcRenderer.send('desktop:open-release-page')
+  },
 })

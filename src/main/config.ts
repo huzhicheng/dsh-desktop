@@ -15,6 +15,12 @@ export const UPDATE_CHANNEL = 'latest'
 /** 自动检查升级的间隔。 */
 export const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
 
+/** 应用本体的发布仓库，检查新版本用。 */
+export const APP_REPO = 'huzhicheng/dsh-desktop'
+
+/** 发布页地址；检测到新版时引导用户来这里下载。 */
+export const APP_RELEASES_URL = `https://github.com/${APP_REPO}/releases/latest`
+
 /** 服务启动就绪的最长等待时间（首启需解压种子，放宽一些）。 */
 export const READINESS_TIMEOUT_MS = 120_000
 

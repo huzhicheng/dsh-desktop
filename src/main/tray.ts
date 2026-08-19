@@ -4,17 +4,21 @@ import { join } from 'node:path'
 import { Menu, Tray, app, nativeImage } from 'electron'
 import { log } from './logger'
 import { APP_DISPLAY_NAME } from './config'
+import type { AppUpdateState } from './app-update'
 import type { UpdatePhase } from './updater'
 
 export interface TrayDeps {
   openMainWindow: () => void
   checkUpdate: () => void
+  /** 检查应用本体的新版本（换壳要重新下载安装包，只能提示）。 */
+  checkAppUpdate: () => void
   restartService: () => void
   openLogs: () => void
   openBridgeSettings: () => void
   quit: () => void
   getVersion: () => string | undefined
   getPhase: () => UpdatePhase
+  getAppUpdate: () => AppUpdateState | undefined
   getBridgeState: () => 'stopped' | 'starting' | 'connected' | 'error'
 }
 
@@ -72,7 +76,9 @@ export function refreshTray(deps: TrayDeps): void {
   }[deps.getBridgeState()]
   // 应用自身的版本也要显示：机器上可能同时存在正式安装、本地构建、开发态
   // 三份，只显示 Harness 版本的话根本分不出跑的是哪一个（实测被这个坑过）
-  const appLabel = `${APP_DISPLAY_NAME} ${app.getVersion()}${app.isPackaged ? '' : '（开发态）'}`
+  const appUpdate = deps.getAppUpdate()
+  const appSuffix = appUpdate?.hasUpdate === true ? `　可更新到 ${appUpdate.latest}` : ''
+  const appLabel = `${APP_DISPLAY_NAME} ${app.getVersion()}${app.isPackaged ? '' : '（开发态）'}${appSuffix}`
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: appLabel, enabled: false },
     { label: version === undefined ? 'Harness 未安装' : `Harness ${version}`, enabled: false },
@@ -82,6 +88,11 @@ export function refreshTray(deps: TrayDeps): void {
     { label: '打开主窗口', click: () => { deps.openMainWindow() } },
     { label: '远程控制设置…', click: () => { deps.openBridgeSettings() } },
     { label: '检查 Harness 更新', enabled: phase.phase === 'idle', click: () => { deps.checkUpdate() } },
+    {
+      label: appUpdate?.checking === true ? '正在检查应用更新…' : '检查应用更新',
+      enabled: appUpdate?.checking !== true,
+      click: () => { deps.checkAppUpdate() },
+    },
     { label: '重启 Harness 服务', enabled: phase.phase === 'idle', click: () => { deps.restartService() } },
     { label: '打开日志目录', click: () => { deps.openLogs() } },
     { type: 'separator' },

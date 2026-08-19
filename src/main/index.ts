@@ -8,6 +8,7 @@
 import { join } from 'node:path'
 import { app, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { ensureAcpProfile } from './acp-profile'
+import { createAppUpdater, type AppUpdater } from './app-update'
 import {
   anyChannelEnabled, bridgeHasSecret, bridgeHasTelegramToken, createBridgeService,
   readBridgeConfig, writeBridgeConfig,
@@ -23,7 +24,7 @@ import { skipWelcomeNotice } from './onboarding'
 import { ensureBundledPlugins, writePluginsReadme } from './plugin-bootstrap'
 import { ensurePnpmShim } from './pnpm-shim'
 import { ensureSeedInstalled, readCurrent, rollback } from './runtime-store'
-import { focusWindow, hasWindow, reloadHarness, showShellWindow } from './shell-window'
+import { focusWindow, hasWindow, paintUpdateBadge, reloadHarness, showShellWindow } from './shell-window'
 import { createTray, destroyTray, refreshTray, type TrayDeps } from './tray'
 import { createHarnessUpdater, type HarnessUpdater } from './updater'
 import {
@@ -42,6 +43,7 @@ const bridge = createBridgeService({
   },
 })
 let updater: HarnessUpdater | undefined
+let appUpdater: AppUpdater | undefined
 let trayDeps: TrayDeps | undefined
 let quitting = false
 let recovering = false
@@ -215,9 +217,19 @@ async function boot(): Promise<void> {
     onPhaseChange: () => { if (trayDeps !== undefined) refreshTray(trayDeps) },
   })
 
+  // 应用本体的新版本检测。状态一变就刷托盘、并把徽标推到侧栏「设置」右端。
+  appUpdater = createAppUpdater({
+    onChange: (next) => {
+      paintUpdateBadge(next)
+      if (trayDeps !== undefined) refreshTray(trayDeps)
+    },
+  })
+
   trayDeps = {
     openMainWindow: () => { void openMain() },
     checkUpdate: () => { void updater?.check({ interactive: true }) },
+    checkAppUpdate: () => { void checkAppUpdateInteractive() },
+    getAppUpdate: () => appUpdater?.state,
     restartService: () => { void restartHarnessService() },
     openLogs: () => { void shell.openPath(logsDir()) },
     openBridgeSettings: () => { showBridgeSettings() },
@@ -257,6 +269,49 @@ async function boot(): Promise<void> {
     void updater?.check().then(refreshVersion)
   }, 20_000)
   setTimeout(() => { void checkShellUpdate() }, 60_000)
+  // 启动即刻查一次应用版本，之后按 UPDATE_CHECK_INTERVAL_MS 轮询
+  appUpdater.schedule()
+}
+
+/**
+ * 用户主动检查应用更新：无论有没有新版都要给个回音。
+ *
+ * 自动检查是静默的（查不到就算了，网络不通是常态），但人点了菜单还没反应，
+ * 会以为功能坏了，所以这里一定弹窗说明结果。
+ */
+async function checkAppUpdateInteractive(): Promise<void> {
+  const updaterRef = appUpdater
+  if (updaterRef === undefined) return
+  const result = await updaterRef.check({ interactive: true })
+  if (result.error !== '') {
+    await dialog.showMessageBox({
+      type: 'warning',
+      title: '检查更新失败',
+      message: '没能拿到最新版本信息。',
+      detail: `${result.error}\n\n可以直接打开发布页看看。`,
+      buttons: ['打开发布页', '知道了'],
+      defaultId: 1,
+      cancelId: 1,
+    }).then(({ response }) => { if (response === 0) updaterRef.openReleasePage() })
+    return
+  }
+  if (!result.hasUpdate) {
+    await dialog.showMessageBox({
+      type: 'info',
+      title: '已是最新版本',
+      message: `${APP_DISPLAY_NAME} ${result.current} 已经是最新版本。`,
+    })
+    return
+  }
+  await dialog.showMessageBox({
+    type: 'info',
+    title: '有新版本',
+    message: `${APP_DISPLAY_NAME} ${result.latest} 已发布。`,
+    detail: `当前版本 ${result.current}。换新版需要重新下载安装包，Harness 运行时与你的设置都不受影响。`,
+    buttons: ['打开发布页', '稍后'],
+    defaultId: 0,
+    cancelId: 1,
+  }).then(({ response }) => { if (response === 0) updaterRef.openReleasePage() })
 }
 
 /**
@@ -280,6 +335,8 @@ function registerBridgeIpc(): void {
   // Harness 侧栏的「远程控制」入口由插件提供，经 preload 转到这里；
   // 插件在浏览器里跑，打不开壳的窗口，只能由壳自己来开。
   ipcMain.on('desktop:open-remote-control', () => { showBridgeSettings() })
+  // 侧栏「设置」右端那个新版本徽标点击后走这里
+  ipcMain.on('desktop:open-release-page', () => { appUpdater?.openReleasePage() })
 
   // 扫码创建飞书应用：过程状态实时推给设置页，成功后直接落盘并回填界面。
   // 手填兜底始终保留——扫码依赖平台灰度，不能当唯一路径。
