@@ -132,11 +132,28 @@ export function createAppUpdater(options: AppUpdaterOptions = {}): AppUpdater {
     })
   }
 
+  /**
+   * 失败后的重试节奏；用完还失败就等下一个常规周期。
+   *
+   * 只查一次是不够的：GitHub API 在国内本来就时通时断（实测启动那一下正好赶上
+   * 抖动，15 秒超时直接放弃），而常规周期是 4 小时。开一会儿就关的用户可能连着
+   * 好几天都碰不上一次成功的检查，等于这个功能没有。
+   */
+  const RETRY_DELAYS_MS = [30_000, 5 * 60_000, 30 * 60_000]
+
+  async function attempt(index: number): Promise<void> {
+    const result = await check()
+    if (result.error === '') return
+    const delay = RETRY_DELAYS_MS[index]
+    if (delay === undefined) return
+    setTimeout(() => { void attempt(index + 1) }, delay)
+  }
+
   return {
     check,
     schedule() {
-      void check()
-      setInterval(() => { void check() }, UPDATE_CHECK_INTERVAL_MS)
+      void attempt(0)
+      setInterval(() => { void attempt(0) }, UPDATE_CHECK_INTERVAL_MS)
     },
     openReleasePage,
     get state() { return { ...state } },
