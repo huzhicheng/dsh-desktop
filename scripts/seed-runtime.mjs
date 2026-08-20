@@ -129,8 +129,17 @@ async function main() {
     process.exit(1)
   }
 
-  const version = flag('--version')
-    ?? runNpm(['view', `${PACKAGE}@latest`, 'version', `--registry=${REGISTRY}`], { quiet: true, stdio: ['ignore', 'pipe', 'inherit'] }).trim()
+  /*
+   * 种子版跟的通道要与应用内升级一致（见 src/main/config.ts 的 UPDATE_CHANNEL）。
+   *
+   * 两边不一致的话，全新安装会开箱就落后一版、首启后立刻联网升一次——而「装完
+   * 断网也能用」正是内置种子的意义。next 不存在时退回 latest。
+   */
+  const resolve = (tag) => runNpm(
+    ['view', `${PACKAGE}@${tag}`, 'version', `--registry=${REGISTRY}`],
+    { quiet: true, stdio: ['ignore', 'pipe', 'inherit'] },
+  ).trim()
+  const version = flag('--version') ?? (resolve('next') || resolve('latest'))
   console.log(`准备种子运行时：${PACKAGE}@${version}（目标 ${targetPlatform}-${targetArch}${cross ? '，交叉准备' : ''}）`)
 
   const seedDir = join(ROOT, 'vendor/seed', `${targetPlatform}-${targetArch}`)

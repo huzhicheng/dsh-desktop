@@ -9,8 +9,19 @@ export const REGISTRIES = [
   'https://registry.npmmirror.com',
 ] as const
 
-/** 升级通道对应的 dist-tag。 */
-export const UPDATE_CHANNEL = 'latest'
+/**
+ * 升级通道对应的 dist-tag。
+ *
+ * 跟 next 而不是 latest：Harness 长期处于开发者预览阶段，上游把新版先发到 next，
+ * latest 往往滞后好几天甚至更久（实测 rc.8 已在 GitHub 发布并推到 next 时，
+ * latest 还停在 rc.7）。这个桌面端的用户就是冲着尝鲜来的，跟 latest 等于总慢一拍。
+ *
+ * 风险由既有机制兜着：新版起不来会自动回滚上一版，并把坏版本拉黑跳过。
+ */
+export const UPDATE_CHANNEL = 'next'
+
+/** next 不存在时退回的通道。上游哪天不再维护 next，升级不该整个失效。 */
+export const UPDATE_CHANNEL_FALLBACK = 'latest'
 
 /** 自动检查升级的间隔。 */
 export const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000

@@ -1,6 +1,6 @@
 /** 查询 npm registry：上游一发新版（dist-tag），桌面端即可感知。 */
 
-import { HARNESS_PACKAGE, REGISTRIES, UPDATE_CHANNEL } from './config'
+import { HARNESS_PACKAGE, REGISTRIES, UPDATE_CHANNEL, UPDATE_CHANNEL_FALLBACK } from './config'
 import { log } from './logger'
 
 export interface LatestInfo {
@@ -21,8 +21,15 @@ export async function fetchLatestVersion(): Promise<LatestInfo> {
       })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const body = await response.json() as { 'dist-tags'?: Record<string, string> }
-      const version = body['dist-tags']?.[UPDATE_CHANNEL]
-      if (version === undefined) throw new Error(`registry 响应缺少 dist-tag "${UPDATE_CHANNEL}"`)
+      const tags = body['dist-tags']
+      // 上游哪天不再维护 next，退回 latest，别让升级整个失效
+      const version = tags?.[UPDATE_CHANNEL] ?? tags?.[UPDATE_CHANNEL_FALLBACK]
+      if (version === undefined) {
+        throw new Error(`registry 响应缺少 dist-tag "${UPDATE_CHANNEL}" 与 "${UPDATE_CHANNEL_FALLBACK}"`)
+      }
+      if (tags?.[UPDATE_CHANNEL] === undefined) {
+        log.warn(`dist-tag "${UPDATE_CHANNEL}" 不存在，本次改用 "${UPDATE_CHANNEL_FALLBACK}"`)
+      }
       return { version, registry }
     } catch (error) {
       lastError = error
