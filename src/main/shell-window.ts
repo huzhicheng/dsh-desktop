@@ -156,26 +156,29 @@ export async function showShellWindow(origin: string): Promise<void> {
   created.webContents.on('dom-ready', declareWindowControls)
   created.webContents.on('did-finish-load', declareWindowControls)
   // 页面换了文档，注入的徽标也没了，重新推一次当前状态
-  created.webContents.on('did-finish-load', () => { paintUpdateBadge(lastBadge) })
+  created.webContents.on('did-finish-load', () => { paintSidebarChrome({}) })
 
   await created.loadURL(origin)
   created.show()
 }
 
 /**
- * 侧栏「设置」那一行右端的新版本提示。
+ * 侧栏上由壳附加的两处信息：顶部的 Harness 运行时版本，底部「设置」右端的新版本提示。
  *
- * 由壳注入而不是做成插件：更新是壳自己的事（要读 app 版本、要开外部浏览器），
- * 而且用户把三个插件都卸了也该照样收到提示。同拖拽区一样，这是窗口层面的
- * 附着物，不是 Harness 的功能扩展。
+ * 由壳注入而不是做成插件：这两样都是壳自己知道的事（运行时版本、应用版本、
+ * 开外部浏览器），而且用户把三个插件都卸了也该照样看得到。同拖拽区一样，
+ * 属于窗口层面的附着物，不是 Harness 的功能扩展。
  *
- * 挂在 dsh 的设置按钮里，用 margin-left:auto 顶到最右。dsh 是 SPA，重渲染会把
- * 这个节点抹掉，所以留一个 MutationObserver 负责补挂。选择器匹配不上（dsh 改了
- * 类名）时整个功能静默退场，不影响别的东西——托盘菜单里仍然能检查更新。
+ * 两处合成一段脚本、共用一个观察者：dsh 是 SPA，对话流每来一个 token 都在改
+ * DOM，装两个 MutationObserver 等于把这份开销付两遍。
+ *
+ * 选择器匹配不上（dsh 改了类名）时静默退场，不影响别的东西——版本号在托盘菜单里
+ * 也有，更新也仍然能从托盘检查。
  */
-const BADGE_SCRIPT = (payload: string): string => `
+const CHROME_SCRIPT = (payload: string): string => `
   (() => {
-    const ID = '__dsh_update_badge__'
+    const BADGE_ID = '__dsh_update_badge__'
+    const VERSION_ID = '__dsh_harness_version__'
     /*
      * 状态放全局，不放闭包。
      *
@@ -183,18 +186,54 @@ const BADGE_SCRIPT = (payload: string): string => `
      * 第一段脚本里的 paint。状态若留在闭包里，观察者就永远拿着首次那份——首次
      * 必然是「无更新」（检查还没回来），于是每次 DOM 变动都把刚画好的徽标抹掉。
      */
-    globalThis.__dshUpdateState__ = ${payload}
+    globalThis.__dshChrome__ = ${payload}
 
-    const paint = () => {
-      const state = globalThis.__dshUpdateState__ ?? { hasUpdate: false, latest: '' }
+    /** 顶部 logo 行右侧的 Harness 版本号。 */
+    const paintVersion = () => {
+      const state = globalThis.__dshChrome__ ?? {}
+      const row = document.querySelector('[class*="logoRow"]')
+      if (row === null) return
+      const existing = document.getElementById(VERSION_ID)
+      /*
+       * 侧栏收窄成 rail 时 logoRow 里只剩折叠按钮（实测宽 35px），brand 整个被
+       * 移除，塞不下也没有意义。
+       */
+      const room = row.getBoundingClientRect().width > 120
+      if (state.harnessVersion === undefined || state.harnessVersion === '' || !room) {
+        existing?.remove()
+        return
+      }
+      const label = existing ?? document.createElement('span')
+      if (existing === null) {
+        label.id = VERSION_ID
+        // 插在 brand 与折叠按钮之间：brand 是 flex:1 1 0%，会让出这块宽度，
+        // 而它内部的 logo 是左对齐的，所以让出来的正是 logo 右侧那段空白
+        const toggle = row.querySelector('[class*="toggle"]')
+        if (toggle !== null) row.insertBefore(label, toggle)
+        else row.appendChild(label)
+      }
+      label.textContent = state.harnessVersion
+      label.title = 'DeepSeek Harness 运行时 ' + state.harnessVersion + '（由应用自动升级）'
+      label.style.cssText = 'flex:none;align-self:center;padding:1px 6px;border-radius:6px;'
+        + 'font-size:10.5px;line-height:15px;font-weight:500;white-space:nowrap;'
+        + 'font-variant-numeric:tabular-nums;letter-spacing:.2px;'
+        // 用 currentColor 跟着 logo 行的前景色走，深浅色主题都不用单独适配。
+        // 透明度别压太低：这行底下常是用户自己设的背景图，.55 时在浅色图上糊成一片
+        + 'color:currentColor;opacity:.78;background:color-mix(in srgb, currentColor 16%, transparent);'
+        + 'cursor:default;pointer-events:auto;user-select:text'
+    }
+
+    /** 底部「设置」那一行右端的新版本提示。 */
+    const paintBadge = () => {
+      const state = globalThis.__dshChrome__ ?? {}
       const trigger = document.querySelector('[class*="settingsArea"] button')
       if (trigger === null) return
-      const existing = document.getElementById(ID)
-      if (!state.hasUpdate) { existing?.remove(); return }
+      const existing = document.getElementById(BADGE_ID)
+      if (state.hasUpdate !== true) { existing?.remove(); return }
 
       const badge = existing ?? document.createElement('span')
       if (existing === null) {
-        badge.id = ID
+        badge.id = BADGE_ID
         badge.addEventListener('click', (event) => {
           // 不要连带触发「设置」本身
           event.preventDefault()
@@ -216,69 +255,89 @@ const BADGE_SCRIPT = (payload: string): string => `
       if (narrow && getComputedStyle(trigger).position === 'static') {
         trigger.style.position = 'relative'
       }
+      globalThis.__dshBadgeNarrow__ = narrow
+    }
+
+    const paint = () => {
+      paintVersion()
+      paintBadge()
 
       /*
-       * 盯着按钮的尺寸变化。
+       * 盯着侧栏宽度变化。
        *
-       * 展开与收起侧栏是 CSS 过渡，DOM 只在点击那一刻变一次；等观察者回调跑到时
-       * 宽度还停在旧值，量出来的 narrow 是错的，之后又没有新的 DOM 变动来纠正，
-       * 于是窄栏里挂着一个装不下的文字徽标。ResizeObserver 会在过渡结束的实际
-       * 尺寸上再回调一次。
+       * 展开与收起是 CSS 过渡，DOM 只在点击那一刻变一次；等 MutationObserver 的
+       * 回调跑到时宽度还停在旧值，量出来的形态是错的，之后又没有新的 DOM 变动来
+       * 纠正，于是窄栏里挂着装不下的文字。ResizeObserver 会在过渡结束的实际尺寸
+       * 上再回调一次。
        *
-       * 只在 narrow 真的翻转时才重画，避免 ResizeObserver 自激。
+       * 只在宽窄真的翻转时才重画，避免 ResizeObserver 自激。
        */
-      globalThis.__dshBadgeNarrow__ = narrow
-      const resize = globalThis.__dshBadgeResize__ ??= new ResizeObserver(() => {
+      const trigger = document.querySelector('[class*="settingsArea"] button')
+      if (trigger === null) return
+      const resize = globalThis.__dshChromeResize__ ??= new ResizeObserver(() => {
         const el = document.querySelector('[class*="settingsArea"] button')
         if (el === null) return
         if ((el.getBoundingClientRect().width < 90) === globalThis.__dshBadgeNarrow__) return
-        globalThis.__dshRepaintBadge__?.()
+        globalThis.__dshRepaintChrome__?.()
       })
-      if (globalThis.__dshBadgeResizeTarget__ !== trigger) {
+      if (globalThis.__dshChromeResizeTarget__ !== trigger) {
         resize.disconnect()
         resize.observe(trigger)
-        globalThis.__dshBadgeResizeTarget__ = trigger
+        globalThis.__dshChromeResizeTarget__ = trigger
       }
     }
-    globalThis.__dshRepaintBadge__ = paint
+    globalThis.__dshRepaintChrome__ = paint
     paint()
 
     /*
-     * dsh 是 SPA，重渲染会把徽标一起换掉，所以要补挂。
+     * dsh 是 SPA，重渲染会把注入的节点一起换掉，所以要补挂。
      *
      * 对话流每来一个 token 都在改 DOM，观察者回调极其频繁，直接 paint 会在每次
      * 变动上做一次查询加布局测量，所以合并一下再画。
      *
      * 这里不能用 requestAnimationFrame：窗口一到后台 visibilityState 就是
-     * hidden，rAF 被完全冻结（实测一秒内一次都不回调），徽标被重渲染抹掉后
+     * hidden，rAF 被完全冻结（实测一秒内一次都不回调），节点被重渲染抹掉后
      * 就再也补不回来。setTimeout 在后台只是被限流到约一秒一次，仍然会执行。
      */
-    if (globalThis.__dshBadgeObserver__ === undefined) {
+    if (globalThis.__dshChromeObserver__ === undefined) {
       let pending = false
       const observer = new MutationObserver(() => {
         if (pending) return
         pending = true
         setTimeout(() => {
           pending = false
-          globalThis.__dshRepaintBadge__?.()
+          globalThis.__dshRepaintChrome__?.()
         }, 120)
       })
       observer.observe(document.body, { childList: true, subtree: true })
-      globalThis.__dshBadgeObserver__ = observer
+      globalThis.__dshChromeObserver__ = observer
     }
     return true
   })()
 `
 
-/** 最近一次推给页面的状态，导航后要重放。 */
-let lastBadge = { hasUpdate: false, latest: '' }
+/** 侧栏上壳附加的信息。 */
+export interface SidebarChrome {
+  /** 应用本体有没有新版本。 */
+  hasUpdate: boolean
+  /** 已发布的最新应用版本。 */
+  latest: string
+  /** 当前使用的 Harness 运行时版本。 */
+  harnessVersion: string
+}
 
-/** 把新版本提示推给页面；没有窗口时只记下来，等窗口起来再画。 */
-export function paintUpdateBadge(state: { hasUpdate: boolean, latest: string }): void {
-  lastBadge = { hasUpdate: state.hasUpdate, latest: state.latest }
+/** 最近一次推给页面的状态，导航后要重放。 */
+let lastChrome: SidebarChrome = { hasUpdate: false, latest: '', harnessVersion: '' }
+
+/**
+ * 更新侧栏上的附加信息；只传要改的那部分。
+ * 没有窗口时只记下来，等窗口起来再画。
+ */
+export function paintSidebarChrome(patch: Partial<SidebarChrome>): void {
+  lastChrome = { ...lastChrome, ...patch }
   if (window === undefined || window.isDestroyed()) return
   window.webContents
-    .executeJavaScript(BADGE_SCRIPT(JSON.stringify(lastBadge)))
+    .executeJavaScript(CHROME_SCRIPT(JSON.stringify(lastChrome)))
     .catch(() => { /* 页面还没就绪，下次导航会再推一次 */ })
 }
 

@@ -24,7 +24,7 @@ import { skipWelcomeNotice } from './onboarding'
 import { ensureBundledPlugins, writePluginsReadme } from './plugin-bootstrap'
 import { ensurePnpmShim } from './pnpm-shim'
 import { ensureSeedInstalled, readCurrent, rollback } from './runtime-store'
-import { focusWindow, hasWindow, paintUpdateBadge, reloadHarness, showShellWindow } from './shell-window'
+import { focusWindow, hasWindow, paintSidebarChrome, reloadHarness, showShellWindow } from './shell-window'
 import { createTray, destroyTray, refreshTray, type TrayDeps } from './tray'
 import { createHarnessUpdater, type HarnessUpdater } from './updater'
 import {
@@ -220,7 +220,7 @@ async function boot(): Promise<void> {
   // 应用本体的新版本检测。状态一变就刷托盘、并把徽标推到侧栏「设置」右端。
   appUpdater = createAppUpdater({
     onChange: (next) => {
-      paintUpdateBadge(next)
+      paintSidebarChrome({ hasUpdate: next.hasUpdate, latest: next.latest })
       if (trayDeps !== undefined) refreshTray(trayDeps)
     },
   })
@@ -243,6 +243,8 @@ async function boot(): Promise<void> {
   trayDeps.getVersion = () => cachedVersion
   const refreshVersion = async (): Promise<void> => {
     cachedVersion = (await readCurrent())?.version
+    // 侧栏顶部那个版本号也要跟着走：Harness 会自动升级，升完不刷新就一直显示旧值
+    paintSidebarChrome({ harnessVersion: cachedVersion ?? '' })
     if (trayDeps !== undefined) refreshTray(trayDeps)
   }
   createTray(trayDeps)
@@ -258,6 +260,8 @@ async function boot(): Promise<void> {
     return fatal('主界面加载失败', error instanceof Error ? error.message : String(error))
   }
   closeStatusWindow()
+  // 侧栏顶部的运行时版本立刻就能显示，不必等 20 秒后那次升级检查
+  paintSidebarChrome({ harnessVersion: state.version })
   log.info(`启动流程完成（总耗时 ${String(Math.round((Date.now() - bootStartedAt) / 1000))} 秒）`)
 
   registerBridgeIpc()
