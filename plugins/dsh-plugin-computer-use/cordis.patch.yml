@@ -1,0 +1,12 @@
+# 把本插件挂进 profile 的配置树。
+#
+# 顶层直接写 `- id: xxx` 是「按 id 修改已有条目」，对新插件会报
+# `patch: entry "xxx" not found`；插入新行必须用 `- insert:` 包起来。
+#
+# 这里只插入本插件一行。连接 Cua Driver 用的 mcp-client 实例不在这里声明——
+# 它的 command 是一个随机器而变的绝对路径，而且驱动没装时不该留一个必然失败的
+# 条目。改由宿主侧在运行时按需 ctx.plugin() 挂载，装完即可连上，不必重启服务。
+
+- insert:
+    - id: computer-use
+      name: dsh-plugin-computer-use

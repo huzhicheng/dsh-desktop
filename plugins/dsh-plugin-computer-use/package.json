@@ -1,0 +1,24 @@
+{
+  "name": "dsh-plugin-computer-use",
+  "version": "0.1.0",
+  "description": "把 Cua Driver 接进 DeepSeek Harness：探测、安装、授权引导，并以 MCP 方式把电脑操作能力注册给 agent",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": { "default": "./lib/index.js" },
+    "./client": { "default": "./lib/client.js" },
+    "./package.json": "./package.json"
+  },
+  "files": ["lib", "cordis.patch.yml"],
+  "scripts": { "build": "node scripts/build.mjs" },
+  "peerDependencies": { "react": "^18.2.0" },
+  "devDependencies": { "esbuild": "^0.25.0" },
+  "dsh": {
+    "client": {
+      "inject": ["@deepseek-ai/dsh-client-runtime", "@deepseek-ai/dsh-client-ui-slots"],
+      "platform": "web"
+    },
+    "bundle": { "patch": "./cordis.patch.yml" }
+  }
+}
