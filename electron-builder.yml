@@ -59,7 +59,13 @@ mac:
     # 种子版 Harness 运行时（首启解压，之后走应用内在线升级）
     - from: vendor/seed/darwin-arm64
       to: seed
-    # 菜单栏图标（tray.ts 从 resourcesPath 读）
+    # 菜单栏图标（tray.ts 从 resourcesPath 读）。
+    # 现在两个平台都用彩色 Logo，所以 trayIcon 这一对必须带上；模板图留着，
+    # 想退回「跟随系统深浅色」的单色方案时不用重新打包资源。
+    - from: resources/trayIcon.png
+      to: trayIcon.png
+    - from: resources/trayIcon@2x.png
+      to: trayIcon@2x.png
     - from: resources/trayTemplate.png
       to: trayTemplate.png
     - from: resources/trayTemplate@2x.png
