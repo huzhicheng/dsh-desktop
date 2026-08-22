@@ -139,8 +139,7 @@ var DEFAULT_CONFIG = {
   extraArgs: [],
   autoConnect: true,
   blockImageResults: true,
-  // get_desktop_state 只回截图，对只收文本的模型没用，默认也藏掉
-  hideTools: ["browser_*", "page", "replay_trajectory", "install_ffmpeg", "get_desktop_state"],
+  hideTools: ["browser_*", "page", "replay_trajectory", "install_ffmpeg"],
   fastEffort: "low",
   maxElements: 200
 };
@@ -156,23 +155,14 @@ function mcpLaunch(config, binPath) {
   const env = {
     CUA_PROXY_BIN: binPath,
     CUA_PROXY_ARGS: ["mcp", ...config.extraArgs].join("\n"),
-    CUA_PROXY_DROP: config.hideTools.join(","),
-    CUA_PROXY_MAX_ELEMENTS: String(config.maxElements)
+    // 能看图的模型不必藏 get_desktop_state，也不该强制关掉截图
+    CUA_PROXY_DROP: [...config.hideTools, ...config.blockImageResults ? ["get_desktop_state"] : []].join(","),
+    CUA_PROXY_MAX_ELEMENTS: String(config.maxElements),
+    CUA_PROXY_NO_IMAGES: config.blockImageResults ? "1" : "0"
   };
   if (config.permissionMode !== "") env.CUA_DRIVER_PERMISSION_MODE = config.permissionMode;
   const proxy = join2(dirname(fileURLToPath(import.meta.url)), "proxy.js");
   return { command: process.execPath, args: [proxy], env };
-}
-function imageDenial(execution) {
-  const raw = execution.name;
-  if (!raw.startsWith(`mcp__${SERVER_NAME}__`)) return void 0;
-  const tool = raw.slice(`mcp__${SERVER_NAME}__`.length);
-  if (tool !== "get_desktop_state" && tool !== "get_window_state") return void 0;
-  const args = typeof execution.arguments === "object" && execution.arguments !== null ? execution.arguments : {};
-  const outFile = args.screenshot_out_file;
-  if (typeof outFile === "string" && outFile !== "") return void 0;
-  if (tool === "get_window_state" && args.include_screenshot === false) return void 0;
-  return `\u5F53\u524D\u6A21\u578B\u4E0D\u63A5\u53D7\u56FE\u7247\uFF0C\u622A\u56FE\u4E0D\u80FD\u76F4\u63A5\u56DE\u5230\u5BF9\u8BDD\u91CC\uFF08\u4E00\u65E6\u8FDB\u5165\u5386\u53F2\uFF0C\u4E4B\u540E\u6BCF\u6B21\u8BF7\u6C42\u90FD\u4F1A\u5931\u8D25\uFF09\u3002\u8BF7\u6539\u7528\u4EE5\u4E0B\u4EFB\u4E00\u79CD\uFF1A\u7ED9\u8FD9\u6B21\u8C03\u7528\u4F20 screenshot_out_file \u628A\u622A\u56FE\u5199\u5230\u6587\u4EF6\u518D\u56DE\u4E00\u4E2A\u8DEF\u5F84\uFF1B\u6216\u8005\u6539\u7528 mcp__${SERVER_NAME}__get_window_state \u8BFB\u7A97\u53E3\u7684\u65E0\u969C\u788D\u6811\u2014\u2014\u5B83\u662F\u7EAF\u6587\u672C\uFF0C\u6BCF\u4E2A\u53EF\u64CD\u4F5C\u5143\u7D20\u5E26 [element_index N]\uFF0C\u70B9\u51FB\u76F4\u63A5\u4F20\u90A3\u4E2A\u7D22\u5F15\u5373\u53EF\u3002`;
 }
 async function connect() {
   const ctx = ctxRef;
@@ -294,7 +284,8 @@ ${connected.message}`;
     if (path === "/block-images" && req.method === "POST") {
       const body = await readBody(req);
       configRef = { ...configRef, blockImageResults: body.enabled === true };
-      sendJson(res, 200, { ok: true, blockImageResults: configRef.blockImageResults });
+      const applied = fork === void 0 ? { ok: true, message: "\u5DF2\u4FDD\u5B58" } : await connect();
+      sendJson(res, 200, { ...applied, blockImageResults: configRef.blockImageResults });
       return;
     }
     if (path === "/mode" && req.method === "POST") {
@@ -325,8 +316,8 @@ function apply(ctx, config = {}) {
   }), "computer-use: \u72B6\u6001\u63A5\u53E3");
   ctx.effect?.(() => ctx.tools.guard((execution) => {
     if (execution.name.startsWith(`mcp__${SERVER_NAME}__`)) usingComputer = true;
-    return configRef.blockImageResults ? imageDenial(execution) : void 0;
-  }), "computer-use: \u62E6\u622A\u4F1A\u8FD4\u56DE\u56FE\u7247\u7684\u8C03\u7528");
+    return void 0;
+  }), "computer-use: \u8BB0\u5F55\u672C\u8F6E\u662F\u5426\u5728\u64CD\u4F5C\u7535\u8111");
   ctx.effect?.(() => ctx.on("agent/request", async (payload, next) => {
     const config2 = await next();
     if (payload.turn !== currentTurn) {

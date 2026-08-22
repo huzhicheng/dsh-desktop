@@ -77,14 +77,15 @@ export interface Config {
   /** 启动时若已装好驱动，是否自动连上。 */
   autoConnect: boolean
   /**
-   * 拦下会把截图塞进对话的调用。
+   * 不让截图进入对话。
    *
-   * 默认开着，因为这个桌面端默认跑 DeepSeek，而它的接口只收文本内容块。截图一旦
-   * 进了历史就会跟着之后每一次请求重发，整个会话从此每次都报
-   * `unknown variant \`image_url\`, expected \`text\``，只能重开会话——一次误调用
-   * 报废一整段对话，代价太大，所以默认拦住。
+   * 只收文本的模型（deepseek-v4-pro / v4-flash）必须开着：截图一旦进了历史就会
+   * 跟着之后每一次请求重发，整个会话从此每次都报
+   * `unknown variant \`image_url\`, expected \`text\``，只能弃用重开。
    *
-   * 换成能看图的模型时把它关掉。
+   * 换成能看图的模型（如 deepseek-v4-flash-vision-exp）就关掉它，截图和
+   * get_desktop_state 都会放开。这一项没法自动判断——插件拿不到「当前这次请求
+   * 用的是哪个模型、它支不支持图片」这组事实，所以做成开关由你定。
    */
   blockImageResults: boolean
   /**
@@ -118,8 +119,7 @@ export interface Config {
 const DEFAULT_CONFIG: Config = {
   binPath: '', permissionMode: 'standard', extraArgs: [], autoConnect: true,
   blockImageResults: true,
-  // get_desktop_state 只回截图，对只收文本的模型没用，默认也藏掉
-  hideTools: ['browser_*', 'page', 'replay_trajectory', 'install_ffmpeg', 'get_desktop_state'],
+  hideTools: ['browser_*', 'page', 'replay_trajectory', 'install_ffmpeg'],
   fastEffort: 'low',
   maxElements: 200,
 }
@@ -148,44 +148,15 @@ function mcpLaunch(config: Config, binPath: string): { command: string, args: st
   const env: Record<string, string> = {
     CUA_PROXY_BIN: binPath,
     CUA_PROXY_ARGS: ['mcp', ...config.extraArgs].join('\n'),
-    CUA_PROXY_DROP: config.hideTools.join(','),
+    // 能看图的模型不必藏 get_desktop_state，也不该强制关掉截图
+    CUA_PROXY_DROP: [...config.hideTools, ...(config.blockImageResults ? ['get_desktop_state'] : [])].join(','),
     CUA_PROXY_MAX_ELEMENTS: String(config.maxElements),
+    CUA_PROXY_NO_IMAGES: config.blockImageResults ? '1' : '0',
   }
   if (config.permissionMode !== '') env.CUA_DRIVER_PERMISSION_MODE = config.permissionMode
   // 用跑着 Harness 的那个 node 起代理，不依赖 PATH 上有没有 node
   const proxy = join(dirname(fileURLToPath(import.meta.url)), 'proxy.js')
   return { command: process.execPath, args: [proxy], env }
-}
-
-/**
- * 判断一次调用会不会把截图塞回对话。
- *
- * get_desktop_state 默认返回 base64 截图，传了 screenshot_out_file 就改为写文件、
- * 只回一个路径；get_window_state 只有显式 include_screenshot 才带图。所以拦的不是
- * 工具本身，而是「不写文件的那种调法」——路径形式照样能用，agent 想看图可以让别的
- * 工具去读那个文件。
- *
- * @returns 需要拦下时给出理由，同时告诉 agent 改用什么；放行则返回 undefined。
- */
-function imageDenial(execution: ToolExecution): string | undefined {
-  const raw = execution.name
-  if (!raw.startsWith(`mcp__${SERVER_NAME}__`)) return undefined
-  const tool = raw.slice(`mcp__${SERVER_NAME}__`.length)
-  if (tool !== 'get_desktop_state' && tool !== 'get_window_state') return undefined
-
-  const args = (typeof execution.arguments === 'object' && execution.arguments !== null
-    ? execution.arguments
-    : {}) as Record<string, unknown>
-  const outFile = args.screenshot_out_file
-  if (typeof outFile === 'string' && outFile !== '') return undefined
-  // get_window_state 不传 include_screenshot 时**默认带图**（官方文档：always
-  // returns BOTH the element tree and a screenshot），所以必须显式为 false 才放行
-  if (tool === 'get_window_state' && args.include_screenshot === false) return undefined
-
-  return '当前模型不接受图片，截图不能直接回到对话里（一旦进入历史，之后每次请求都会失败）。'
-    + '请改用以下任一种：给这次调用传 screenshot_out_file 把截图写到文件再回一个路径；'
-    + `或者改用 mcp__${SERVER_NAME}__get_window_state 读窗口的无障碍树——`
-    + '它是纯文本，每个可操作元素带 [element_index N]，点击直接传那个索引即可。'
 }
 
 /**
@@ -316,7 +287,9 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (path === '/block-images' && req.method === 'POST') {
       const body = await readBody(req)
       configRef = { ...configRef, blockImageResults: body.enabled === true }
-      sendJson(res, 200, { ok: true, blockImageResults: configRef.blockImageResults })
+      // 这一项是通过环境变量传给代理的，得重连才生效
+      const applied = fork === undefined ? { ok: true, message: '已保存' } : await connect()
+      sendJson(res, 200, { ...applied, blockImageResults: configRef.blockImageResults })
       return
     }
     if (path === '/mode' && req.method === 'POST') {
@@ -353,11 +326,18 @@ export function apply(ctx: PluginContext, config: Partial<Config> = {}): void {
   }), 'computer-use: 状态接口')
 
   // 守卫在 tools/pre-execute 之后跑，返回理由即拒绝这次调用
+  /*
+   * 守卫在这里只用来观察，从不拒绝。
+   *
+   * 曾经用它拦「会返回截图的调法」，那是错的：调用链是 模型 → 守卫 → MCP 客户端
+   * → 代理 → cua，守卫在代理之前，看到的是模型发出的原始参数，于是抢在代理把参数
+   * 改好之前就拒了。代理本可以让这次调用直接成功，结果白白多走一个来回——而这
+   * 正是我们在想办法省掉的那种开销。图片的事全部交给代理。
+   */
   ctx.effect?.(() => ctx.tools.guard((execution) => {
-    // 守卫每次调用都会走到，顺便用它记下「这一轮在操作电脑」
     if (execution.name.startsWith(`mcp__${SERVER_NAME}__`)) usingComputer = true
-    return configRef.blockImageResults ? imageDenial(execution) : undefined
-  }), 'computer-use: 拦截会返回图片的调用')
+    return undefined
+  }), 'computer-use: 记录本轮是否在操作电脑')
 
   /*
    * 操作电脑期间降低推理强度。

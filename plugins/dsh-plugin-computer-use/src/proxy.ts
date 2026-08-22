@@ -23,6 +23,7 @@
  *   CUA_PROXY_ARGS        传给它的参数，用换行分隔
  *   CUA_PROXY_DROP        要隐藏的工具名或前缀，逗号分隔
  *   CUA_PROXY_MAX_ELEMENTS  get_window_state 的元素上限，0 表示不干预
+ *   CUA_PROXY_NO_IMAGES     为 1 时强制不让截图回到对话（只收文本的模型必须开）
  */
 
 import { spawn } from 'node:child_process'
@@ -32,6 +33,7 @@ const BIN = process.env.CUA_PROXY_BIN ?? ''
 const ARGS = (process.env.CUA_PROXY_ARGS ?? 'mcp').split('\n').filter(part => part !== '')
 const DROP = (process.env.CUA_PROXY_DROP ?? '').split(',').map(part => part.trim()).filter(part => part !== '')
 const MAX_ELEMENTS = Number(process.env.CUA_PROXY_MAX_ELEMENTS ?? '200')
+const NO_IMAGES = process.env.CUA_PROXY_NO_IMAGES !== '0'
 
 if (BIN === '') {
   process.stderr.write('cua 代理：没有给 CUA_PROXY_BIN\n')
@@ -105,8 +107,9 @@ function rewriteCall(frame: Record<string, unknown>): void {
   const args = (typeof params.arguments === 'object' && params.arguments !== null
     ? params.arguments
     : {}) as Record<string, unknown>
-  // 已经指定了写文件就别动：那是调用方自己要图，且图不会进对话
-  if (typeof args.screenshot_out_file !== 'string' || args.screenshot_out_file === '') {
+  // 能看图的模型不必压制截图；只收文本的才强制关掉。
+  // 已经指定了写文件的也别动：那是调用方自己要图，且图落盘不进对话。
+  if (NO_IMAGES && (typeof args.screenshot_out_file !== 'string' || args.screenshot_out_file === '')) {
     args.include_screenshot = false
   }
   if (MAX_ELEMENTS > 0 && args.max_elements === undefined) args.max_elements = MAX_ELEMENTS

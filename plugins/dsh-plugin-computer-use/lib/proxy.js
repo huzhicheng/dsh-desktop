@@ -5,6 +5,7 @@ var BIN = process.env.CUA_PROXY_BIN ?? "";
 var ARGS = (process.env.CUA_PROXY_ARGS ?? "mcp").split("\n").filter((part) => part !== "");
 var DROP = (process.env.CUA_PROXY_DROP ?? "").split(",").map((part) => part.trim()).filter((part) => part !== "");
 var MAX_ELEMENTS = Number(process.env.CUA_PROXY_MAX_ELEMENTS ?? "200");
+var NO_IMAGES = process.env.CUA_PROXY_NO_IMAGES !== "0";
 if (BIN === "") {
   process.stderr.write("cua \u4EE3\u7406\uFF1A\u6CA1\u6709\u7ED9 CUA_PROXY_BIN\n");
   process.exit(1);
@@ -45,7 +46,7 @@ function rewriteCall(frame) {
   const params = frame.params;
   if (params?.name !== "get_window_state") return;
   const args = typeof params.arguments === "object" && params.arguments !== null ? params.arguments : {};
-  if (typeof args.screenshot_out_file !== "string" || args.screenshot_out_file === "") {
+  if (NO_IMAGES && (typeof args.screenshot_out_file !== "string" || args.screenshot_out_file === "")) {
     args.include_screenshot = false;
   }
   if (MAX_ELEMENTS > 0 && args.max_elements === void 0) args.max_elements = MAX_ELEMENTS;

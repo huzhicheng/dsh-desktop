@@ -27,26 +27,32 @@ let tray: Tray | undefined
 /**
  * 托盘图标由 `npm run icons` 生成。
  *
- * macOS 要求菜单栏图标是「模板图」（纯黑 + 透明），系统据此自动适配深浅色，
- * 所以这里用的是单色鲸鱼剪影而不是彩色 logo——那张插画缩到 16pt 会糊成色块。
- * Windows 没有模板图机制，且黑色剪影在深色任务栏上几乎不可见，所以单独使用
- * 32px 彩色产品 Logo；Windows 会按当前 DPI 缩到通知区域的实际尺寸。
+ * 两个平台都用彩色产品 Logo。
+ *
+ * macOS 这边是刻意不走「模板图」那条路的。模板图（纯黑 + 透明）能让系统自动适配
+ * 深浅色菜单栏，是官方推荐做法，代价是只能单色——而菜单栏里一排应用图标时，
+ * 单色剪影很难一眼认出是哪个。这里选择辨识度，接受两个后果：图标不随系统深浅色
+ * 变化，且缩到 16pt 后插画细节会损失。
+ *
+ * 尺寸上 macOS 菜单栏按 16pt 排版，所以传 22px 那张会被压扁；仍用 16/32 这一对，
+ * Retina 上由 @2x 那张顶上。Windows 没有模板图机制，按当前 DPI 缩到通知区域尺寸。
  *
  * 取不到文件时退回空图：宁可菜单栏图标是空的，也不该让托盘创建失败、
  * 导致用户连退出菜单都没有。
  */
 function trayIcon(): Electron.NativeImage {
-  const name = process.platform === 'win32' ? 'trayIcon.png' : 'trayTemplate.png'
   const file = app.isPackaged
-    ? join(process.resourcesPath, name)
-    : join(__dirname, '../../resources', name)
+    ? join(process.resourcesPath, 'trayIcon.png')
+    : join(__dirname, '../../resources/trayIcon.png')
   const image = nativeImage.createFromPath(file)
   if (image.isEmpty()) {
     log.warn(`菜单栏图标缺失：${file}`)
     return nativeImage.createEmpty()
   }
-  if (process.platform === 'darwin') image.setTemplateImage(true)
-  return image
+  // 菜单栏按 16pt 排版；不缩的话 32px 原图会把菜单栏撑高
+  return process.platform === 'darwin'
+    ? image.resize({ width: 16, height: 16, quality: 'best' })
+    : image
 }
 
 export function createTray(deps: TrayDeps): void {

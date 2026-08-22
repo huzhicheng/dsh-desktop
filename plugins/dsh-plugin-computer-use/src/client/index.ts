@@ -203,10 +203,12 @@ function openPanel(): void {
       block.addEventListener('change', () => {
         void api('/block-images', { enabled: block.checked }).then(refresh)
       })
-      body.appendChild(line('拦截返回截图的调用',
-        'DeepSeek 的接口只收文本。截图一旦进了对话历史会跟着之后每次请求重发，'
-        + '整段会话从此都失败、只能重开。开着这项会挡下不写文件的截图调用，并提示 agent '
-        + '改用无障碍树。换成能看图的模型时关掉它。',
+      body.appendChild(line('不让截图进入对话',
+        status.blockImageResults
+          ? '当前按「模型只收文本」处理：截图不会回到对话，get_desktop_state 也不暴露。'
+            + '换成能看图的模型（如 deepseek-v4-flash-vision-exp）后关掉这项。'
+          : '当前按「模型能看图」处理：截图会回到对话。若模型其实不收图，'
+            + '一次调用就会让整段会话报错并且救不回来。',
         status.blockImageResults ? 'on' : 'warn', block))
     }
 

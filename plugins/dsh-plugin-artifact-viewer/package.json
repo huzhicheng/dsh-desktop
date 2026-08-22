@@ -1,0 +1,24 @@
+{
+  "name": "dsh-plugin-artifact-viewer",
+  "version": "0.1.0",
+  "description": "右侧栏文档与图片查看器：浏览工作区文件、点击对话里的文件名直接预览、md 渲染与编辑",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": { "default": "./lib/index.js" },
+    "./client": { "default": "./lib/client.js" },
+    "./package.json": "./package.json"
+  },
+  "files": ["lib", "cordis.patch.yml"],
+  "scripts": { "build": "node scripts/build.mjs" },
+  "peerDependencies": { "react": "^18.2.0" },
+  "devDependencies": { "esbuild": "^0.25.0" },
+  "dsh": {
+    "client": {
+      "inject": ["@deepseek-ai/dsh-client-runtime", "@deepseek-ai/dsh-client-ui-slots"],
+      "platform": "web"
+    },
+    "bundle": { "patch": "./cordis.patch.yml" }
+  }
+}

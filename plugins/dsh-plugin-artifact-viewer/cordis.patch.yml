@@ -1,0 +1,8 @@
+# 把本插件挂进 profile 的配置树。
+#
+# 顶层直接写 `- id: xxx` 是「按 id 修改已有条目」，对新插件会报
+# `patch: entry "xxx" not found`；插入新行必须用 `- insert:` 包起来。
+
+- insert:
+    - id: artifact-viewer
+      name: dsh-plugin-artifact-viewer
