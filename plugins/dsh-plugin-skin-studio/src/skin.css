@@ -178,9 +178,11 @@ html[data-skin-bg='video'] #skin-studio-art > .skin-canvas { display: none; }
 }
 
 /* ── 把 dsh 的色板换成本皮肤的强调色 ─────────────────────────────
-   发送按钮等品牌元素取自 deepseek-400，整条色阶一起换，深浅关系不乱。 */
-body,
-body[data-ds-dark-theme] {
+   发送按钮等品牌元素取自 deepseek-400，整条色阶一起换，深浅关系不乱。
+
+   选择器前缀 html.skin-studio 不是为了作用域，是为了特异性，理由见下一块。 */
+html.skin-studio body,
+html.skin-studio body[data-ds-dark-theme] {
   --dsw-static-deepseek-50: color-mix(in srgb, var(--skin-accent) 18%, white);
   --dsw-static-deepseek-100: color-mix(in srgb, var(--skin-accent) 28%, white);
   --dsw-static-deepseek-200: color-mix(in srgb, var(--skin-accent) 42%, white);
@@ -196,10 +198,21 @@ body[data-ds-dark-theme] {
 
 /* ── 语义层 ─────────────────────────────────────────────────────
    表面全部带 alpha，背景图才透得上来；--skin-transparency 越大越透。
-   选择器同时列出 body 与 body[data-ds-dark-theme]：dsh 自己的暗色规则用的是
-   后者（特异性 0,1,1），只写 body 会在暗色下被它压过。 */
-body,
-body[data-ds-dark-theme] {
+
+   选择器必须带 html.skin-studio 前缀，且两条都列出来。理由有两层：
+
+   一是特异性。dsh 自己的暗色规则用 body[data-ds-dark-theme]（0,1,1），
+   只写 body（0,0,1）在暗色下会被压过。
+
+   二是文档顺序。同特异性时后加载的胜出，而 dsh 是按需加载 CSS 分片的——实测
+   页面里有 96 张样式表，本插件的那张排在第 4，之后加载的九十多张全都能压过它。
+   靠「把自己的 style 追加到最后」是治不了的：新分片随时会再追加。所以这里用
+   html.skin-studio 把特异性抬到 (0,2,2)，让顺序不再影响结果。
+
+   这一条曾经悄悄失效过：Harness 升级后表面全变回不透明、背景图彻底看不见，
+   而插件自身的变量、画布层、视频元素全都正常，只是被压在不透明表面之下。 */
+html.skin-studio body,
+html.skin-studio body[data-ds-dark-theme] {
   /*
    * 阅读区不铺底。
    *

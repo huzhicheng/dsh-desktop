@@ -164,6 +164,21 @@ function mcpLaunch(config, binPath) {
   const proxy = join2(dirname(fileURLToPath(import.meta.url)), "proxy.js");
   return { command: process.execPath, args: [proxy], env };
 }
+var effortSupport = /* @__PURE__ */ new Map();
+async function supportsEffort(ctx, provider, model, effort) {
+  const key = `${provider}|${model}|${effort}`;
+  const known = effortSupport.get(key);
+  if (known !== void 0) return known;
+  let ok = false;
+  try {
+    const info = await ctx.llm?.resolveModelInfo(provider, model);
+    ok = info?.reasoning?.efforts?.some((item) => item.id === effort) === true;
+  } catch {
+    ok = false;
+  }
+  effortSupport.set(key, ok);
+  return ok;
+}
 async function connect() {
   const ctx = ctxRef;
   if (ctx === void 0) return { ok: false, message: "\u63D2\u4EF6\u5C1A\u672A\u521D\u59CB\u5316" };
@@ -325,6 +340,7 @@ function apply(ctx, config = {}) {
       usingComputer = false;
     }
     if (configRef.fastEffort === "" || !usingComputer) return config2;
+    if (!await supportsEffort(ctx, config2.provider, config2.model, configRef.fastEffort)) return config2;
     return { ...config2, reasoningEffort: configRef.fastEffort };
   }), "computer-use: \u64CD\u4F5C\u671F\u95F4\u964D\u4F4E\u63A8\u7406\u5F3A\u5EA6");
   ctx.effect?.(() => () => {

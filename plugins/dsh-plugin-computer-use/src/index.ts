@@ -40,8 +40,13 @@ interface ToolExecution { readonly name: string, readonly arguments: unknown }
 
 interface LlmCallConfig { provider: string, model: string, reasoningEffort?: string }
 
+interface ResolvedModelInfo {
+  reasoning?: { efforts?: readonly { id?: string }[] }
+}
+
 interface PluginContext {
   tools: { guard: (guard: (execution: ToolExecution) => string | undefined) => () => void }
+  llm?: { resolveModelInfo: (provider: string, model: string) => Promise<ResolvedModelInfo> }
   on: (
     event: 'agent/request',
     listener: (
@@ -157,6 +162,36 @@ function mcpLaunch(config: Config, binPath: string): { command: string, args: st
   // 用跑着 Harness 的那个 node 起代理，不依赖 PATH 上有没有 node
   const proxy = join(dirname(fileURLToPath(import.meta.url)), 'proxy.js')
   return { command: process.execPath, args: [proxy], env }
+}
+
+/** provider|model → 该模型是否支持要降到的那一档；查一次就记住。 */
+const effortSupport = new Map<string, boolean>()
+
+/**
+ * 这个模型认不认要降到的那一档推理强度。
+ *
+ * 必须先问再改。Harness 的校验是「档位不在该模型能力里就让请求直接失败」，
+ * 不会自动夹到最近的合法值——实测给 OpenRouter 上一个不支持推理强度的模型硬塞
+ * low，整轮直接报 UNSUPPORTED_REASONING_EFFORT 挂掉。也就是说盲目降档会让所有
+ * 「不带推理档位」的模型一用电脑操作就崩。
+ *
+ * 查不到能力时保守返回 false：宁可不降档、慢一点，也不该把这一轮弄挂。
+ */
+async function supportsEffort(
+  ctx: PluginContext, provider: string, model: string, effort: string,
+): Promise<boolean> {
+  const key = `${provider}|${model}|${effort}`
+  const known = effortSupport.get(key)
+  if (known !== undefined) return known
+  let ok = false
+  try {
+    const info = await ctx.llm?.resolveModelInfo(provider, model)
+    ok = info?.reasoning?.efforts?.some(item => item.id === effort) === true
+  } catch {
+    ok = false
+  }
+  effortSupport.set(key, ok)
+  return ok
 }
 
 /**
@@ -354,6 +389,7 @@ export function apply(ctx: PluginContext, config: Partial<Config> = {}): void {
       usingComputer = false
     }
     if (configRef.fastEffort === '' || !usingComputer) return config
+    if (!await supportsEffort(ctx, config.provider, config.model, configRef.fastEffort)) return config
     return { ...config, reasoningEffort: configRef.fastEffort }
   }), 'computer-use: 操作期间降低推理强度')
 

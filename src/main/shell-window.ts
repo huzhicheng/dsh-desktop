@@ -38,9 +38,16 @@ function isWebUrl(raw: string): boolean {
   }
 }
 
-function sameOrigin(raw: string, origin: string): boolean {
+/**
+ * 两个地址是否同源。
+ *
+ * 两边都要解析后再比 origin。传进来的「origin」其实是 dsh 就绪行给的完整 URL，
+ * 带着鉴权 token（`http://127.0.0.1:37080/?token=...`）——直接拿它跟 url.origin
+ * 比字符串永远不相等，站内跳转会被判成外链丢给浏览器。
+ */
+function sameOrigin(raw: string, reference: string): boolean {
   try {
-    return new URL(raw).origin === origin
+    return new URL(raw).origin === new URL(reference).origin
   } catch {
     return false
   }

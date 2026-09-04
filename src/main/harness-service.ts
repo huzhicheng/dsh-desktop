@@ -42,12 +42,22 @@ export interface HarnessServiceOptions {
   onUnexpectedExit?: (detail: { code: number | null; signal: NodeJS.Signals | null }) => void
 }
 
+/**
+ * 校验就绪行给出的地址，并原样保留查询串。
+ *
+ * 不能只取 url.origin。Harness 从 0.1.1 起给 `dsh web` 加了鉴权，就绪行是
+ * `dsh web: http://127.0.0.1:37080/?token=...`，token 在查询串里。丢掉它，
+ * 页面会停在「authentication required; reopen the URL printed by dsh web」。
+ *
+ * 以前没暴露，是因为 dsh 会自己打开那个带 token 的 URL 把会话种进默认浏览器；
+ * 桌面端加上 --no-open 之后这条路断了，壳加载的裸地址就没有凭据了。
+ */
 function validateOrigin(raw: string): string {
   const url = new URL(raw)
   if (url.protocol !== 'http:' || (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost')) {
     throw new Error(`Harness 返回了非本机回环地址，拒绝加载：${raw}`)
   }
-  return url.origin
+  return url.toString()
 }
 
 export function createHarnessService(options: HarnessServiceOptions = {}): HarnessService {
@@ -61,7 +71,10 @@ export function createHarnessService(options: HarnessServiceOptions = {}): Harne
     stopping = false
     const startedAt = Date.now()
     log.info(`正在启动 Harness 本地服务（端口 ${String(port)}）…`)
-    const spawned = spawn(bundledNode(), [entry, 'web', '--host', '127.0.0.1', '--port', String(port)], {
+    // --no-open：Harness 从 0.1.0-rc.8 起会在 `dsh web` 启动时自动打开默认浏览器。
+    // 那对命令行用户是方便，对桌面端是多余——壳自己就有窗口，再弹一个浏览器标签页
+    // 等于同一个界面开两份，而且用户关掉哪个都不影响服务，只会更困惑。
+    const spawned = spawn(bundledNode(), [entry, 'web', '--host', '127.0.0.1', '--port', String(port), '--no-open'], {
       cwd: app.getPath('home'),
       env: {
         ...process.env,
