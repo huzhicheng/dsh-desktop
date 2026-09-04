@@ -17,35 +17,48 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const RELEASE = join(ROOT, 'release')
 
+/**
+ * 附件名必须跟 latest-mac.yml 里的 url 逐字一致。
+ *
+ * 本机产物名带空格（`DSH Desktop-1.0.5-arm64.dmg`），而清单里 electron-builder
+ * 写的是连字符形式。它自己的 publish 会在上传时改名，`gh release upload` 不会
+ * ——GitHub 收到带空格的文件名会把空格转成点，变成 `DSH.Desktop-...`。
+ * 于是 electron-updater 按清单去取就是 404，自动升级静默失效。
+ */
+function uploadName(name) {
+  return name.replace(/ /g, '-')
+}
+
 function main() {
   const version = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
   const tag = `v${version}`
 
-  const assets = [
+  const names = [
     `DSH Desktop-${version}-arm64.dmg`,
     `DSH Desktop-${version}-arm64-mac.zip`,
     // 差量升级靠它。macOS 走 zip 这条路，所以这一份必须在
     `DSH Desktop-${version}-arm64-mac.zip.blockmap`,
     'latest-mac.yml',
-  ].map((name) => join(RELEASE, name))
+  ]
 
-  const missing = assets.filter((path) => !existsSync(path))
+  const missing = names.filter((name) => !existsSync(join(RELEASE, name)))
   if (missing.length > 0) {
-    process.stderr.write(`缺少产物，先跑 npm run dist:mac:notarize：\n${missing.map((p) => `  ${p}`).join('\n')}\n`)
+    process.stderr.write(`缺少产物，先跑 npm run dist:mac:notarize：\n${missing.map((n) => `  ${n}`).join('\n')}\n`)
     process.exit(1)
   }
 
   // 贴票的是 DMG 自己，app 的票据在里面；这里再确认一次，避免传上去才发现没公证
   try {
-    execFileSync('xcrun', ['stapler', 'validate', assets[0]], { stdio: 'ignore' })
+    execFileSync('xcrun', ['stapler', 'validate', join(RELEASE, names[0])], { stdio: 'ignore' })
   } catch {
-    process.stderr.write(`DMG 没有公证票据，拒绝上传：${assets[0]}\n`)
+    process.stderr.write(`DMG 没有公证票据，拒绝上传：${names[0]}\n`)
     process.exit(1)
   }
 
@@ -56,10 +69,33 @@ function main() {
     process.exit(1)
   }
 
-  process.stdout.write(`上传 ${String(assets.length)} 个产物到 ${tag} …\n`)
-  // --clobber：允许覆盖同名附件，便于重传
-  execFileSync('gh', ['release', 'upload', tag, ...assets, '--clobber'], { stdio: 'inherit' })
-  process.stdout.write(`macOS 产物已传到 ${tag}\n`)
+  // 在临时目录里按正确的名字放一份再传，不动 release/ 下的原始产物
+  const staging = mkdtempSync(join(tmpdir(), 'dsh-publish-'))
+  try {
+    const staged = names.map((name) => {
+      const target = join(staging, uploadName(name))
+      copyFileSync(join(RELEASE, name), target)
+      return target
+    })
+    process.stdout.write(`上传 ${String(staged.length)} 个产物到 ${tag} …\n`)
+    // --clobber：允许覆盖同名附件，便于重传
+    execFileSync('gh', ['release', 'upload', tag, ...staged, '--clobber'], { stdio: 'inherit' })
+  } finally {
+    rmSync(staging, { recursive: true, force: true })
+  }
+
+  // 传完立刻核对：清单里的每个 url 都要能在附件列表里找到，找不到就是升级坏了
+  const manifest = readFileSync(join(RELEASE, 'latest-mac.yml'), 'utf8')
+  const urls = [...manifest.matchAll(/url: (.+)/g)].map((m) => m[1].trim())
+  const uploaded = new Set(JSON.parse(
+    execFileSync('gh', ['release', 'view', tag, '--json', 'assets'], { encoding: 'utf8' }),
+  ).assets.map((a) => a.name))
+  const broken = urls.filter((url) => !uploaded.has(url))
+  if (broken.length > 0) {
+    process.stderr.write(`清单引用的附件不在 Release 里，自动升级会失效：\n${broken.map((u) => `  ${u}`).join('\n')}\n`)
+    process.exit(1)
+  }
+  process.stdout.write(`macOS 产物已传到 ${tag}，清单引用的 ${String(urls.length)} 个附件都对得上\n`)
 }
 
 main()
