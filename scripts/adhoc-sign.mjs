@@ -23,6 +23,18 @@ import { execFileSync } from 'node:child_process'
 export default async function adhocSign(context) {
   if (context.electronPlatformName !== 'darwin') return
 
+  /*
+   * 有 Developer ID 证书时让路。
+   *
+   * electron-builder 自己会用证书签名并附上 entitlements；此时再跑一遍 ad-hoc
+   * 会把那份签名连同 entitlements 一起覆盖掉，公证必然失败，而构建仍是绿的。
+   * 判断依据取配置里的 identity：显式为 null 才是「不签名」，才轮到这里兜底。
+   */
+  if (context.packager.platformSpecificBuildOptions.identity !== null) {
+    process.stdout.write('  • 已配置 Developer ID，跳过 ad-hoc 签名\n')
+    return
+  }
+
   const app = `${context.appOutDir}/${context.packager.appInfo.productFilename}.app`
   // --deep 连同内置的 Node、pnpm、helper 一起签；--force 覆盖 Electron 自带的
   // linker-signed 签名。顺序上必须先签内层再签外层，--deep 已经处理好。

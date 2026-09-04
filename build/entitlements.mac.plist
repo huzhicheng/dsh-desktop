@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  强化运行时（hardened runtime）下的豁免项。公证要求开启强化运行时，而它默认
+  禁掉的几件事恰好是 Electron 和本应用赖以运行的：
+
+  - allow-jit / allow-unsigned-executable-memory：V8 要在运行时生成机器码。
+  - disable-library-validation：应用内置了官方 Node、pnpm 与 Harness 运行时，
+    它们的签名不是本团队签发的；不关掉库校验，加载与执行会被系统拒绝。
+  - allow-dyld-environment-variables：壳给子进程改 PATH 等环境后再 spawn。
+  - inherit：子进程继承父进程的沙箱与豁免，Electron 的 helper 走这条。
+
+  这些是分发型 Electron 应用的常规集合，不是为了绕开什么——每一条都对应上面
+  一个具体的运行需求。
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+</dict>
+</plist>

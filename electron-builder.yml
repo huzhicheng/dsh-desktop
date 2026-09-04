@@ -1,5 +1,5 @@
 # 打包配置：macOS（arm64）+ Windows 11（x64）。
-# 签名/公证：配好证书后删掉 mac.identity: null；Windows 代码签名见 README。
+# macOS 用 Developer ID 正式签名并公证；Windows 代码签名见 README。
 appId: com.moon.dsh-desktop
 productName: DSH Desktop
 directories:
@@ -18,13 +18,27 @@ asarUnpack:
 
 npmRebuild: false
 
-# 打包后给 macOS 产物做 ad-hoc 签名。不签的话 Apple Silicon 上会报
-# 「已损坏，无法打开」，且右键「打开」绕不过去（那条路只对「未验证的开发者」有效）。
+# afterPack 里的 ad-hoc 签名只在拿不到 Developer ID 证书时兜底；有证书时
+# electron-builder 自己签，那个钩子会自行跳过，见脚本内的判断。
 afterPack: scripts/adhoc-sign.mjs
 
 mac:
   category: public.app-category.developer-tools
-  identity: null
+  # 用 Developer ID Application 证书签名。留空表示让 electron-builder 自己从
+  # 钥匙串里挑——本机只有一张 Developer ID，不会挑错；CI 上由 CSC_LINK 提供。
+  identity: zhicheng hu (5J5U2Y44US)
+  # 公证的前提。开启后 V8 生成机器码、加载内置 Node/pnpm 都需要豁免，见 entitlements。
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  # 公证：把包传给苹果扫描并回贴票据（staple）。做完之后用户双击即开，
+  # 既不用 xattr 清隔离标记，也不会再出现「未验证的开发者」。
+  #
+  # 这里只能写布尔值（26.x 起如此，写成对象会被 schema 拒绝）；凭据走环境变量。
+  # 本机用钥匙串 profile：APPLE_KEYCHAIN_PROFILE=dsh-notary，见 npm 脚本
+  # dist:mac:notarize。CI 上改用 App Store Connect API key 那三个变量。
+  notarize: true
   # 只给 1024 的 PNG，.icns 由 electron-builder 自动派生
   icon: build/icon.png
   target:
