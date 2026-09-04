@@ -20,7 +20,8 @@
     "icons": "electron scripts/make-icons.mjs",
     "prepare:pnpm": "node scripts/fetch-pnpm.mjs",
     "install:latest": "node scripts/install-latest.mjs",
-    "dist:mac:notarize": "APPLE_KEYCHAIN_PROFILE=dsh-notary npm run dist:mac"
+    "dist:mac:notarize": "APPLE_KEYCHAIN_PROFILE=dsh-notary npm run dist:mac",
+    "release:mac": "npm run dist:mac:notarize && node scripts/publish-mac.mjs"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "^0.25.1",

@@ -1,16 +1,21 @@
-# 发版流水线：推一个 v* 标签，自动出 macOS 与 Windows 安装包并上传到 Releases。
+# 发版流水线：推一个 v* 标签，自动出 Windows 安装包并上传到 Releases。
 #
-# 两个平台必须各自在原生环境构建，不能交叉出包：
-#   - Windows 的 NSIS 卸载器要真正执行一遍 WriteUninstaller 才能生成，
-#     在 macOS 上没有 Wine 时会静默失败，产出「能装不能卸」的包（实测踩过）。
-#   - macOS 的签名与公证只能在 macOS 上做。
+# macOS 不在这里出包，要在本机跑 `npm run release:mac`。
+#
+# 原因是签名。macOS 包现在用 Developer ID 正式签名并公证，私钥和公证凭据都在
+# 本机钥匙串里，没有放进 GitHub Secrets。CI 上没有证书，一旦让它跑 --mac，
+# electron-builder 会因为找不到 `identity` 指定的证书直接失败。
+#
+# Windows 的包也必须在 Windows 上出：NSIS 卸载器要真正执行一遍 WriteUninstaller
+# 才能生成，在 macOS 上没有 Wine 时会静默失败，产出「能装不能卸」的包（实测踩过）。
 #
 # 上传走 electron-builder 自己的 publish，而不是手工传附件：它会同时生成
 # latest.yml / latest-mac.yml，壳自身的在线升级（electron-updater）靠这两个
 # 文件发现新版本；手工传附件会漏掉它们，自动更新就永远发现不了新版。
+# 本机那条路（release:mac）同样是调 electron-builder 的 publish，不是手工上传。
 #
 # Release 先落成草稿（electron-builder.yml 里 releaseType: draft），
-# 两个平台都传完后再由人工确认发布。
+# 等 Windows 与 macOS 两边的产物都传齐了再由人工确认发布。
 name: release
 
 on:
@@ -83,13 +88,12 @@ jobs:
   build:
     needs: prepare-release
     strategy:
-      # 一个平台失败不影响另一个继续，便于单独重跑
+      # 一个平台失败不影响另一个继续，便于单独重跑。
+      # 现在矩阵里只剩 Windows，macOS 见文件顶部说明——留着矩阵结构是为了
+      # 哪天证书进了 Secrets 能直接把 macos-14 那条加回来。
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
-            name: macOS (arm64)
-            dist: npx electron-builder --mac --arm64 --publish always
           - os: windows-latest
             name: Windows (x64)
             dist: npx electron-builder --win nsis --x64 --publish always

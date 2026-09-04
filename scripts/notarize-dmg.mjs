@@ -20,7 +20,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
@@ -106,6 +106,14 @@ function main() {
       const manifest = join(RELEASE, 'latest-mac.yml')
       // electron-builder 会把文件名里的空格换成连字符再写进清单
       const updated = refreshManifest(manifest, name.replace(/ /g, '-'), digest, size)
+      /*
+       * 同理，旁边那份 .dmg.blockmap 描述的是贴票之前的文件，已经对不上了。
+       * 差量下载拿它去比对只会拼出一个坏文件，所以直接删掉——过期的 blockmap
+       * 比没有 blockmap 危险。macOS 的自动升级下载的是 zip（latest-mac.yml 里
+       * path 指向它），zip 和它的 blockmap 不受贴票影响，差量升级照常。
+       */
+      const blockmap = `${path}.blockmap`
+      if (existsSync(blockmap)) rmSync(blockmap)
       process.stdout.write(`  • ${name} 已公证贴票${updated ? '，升级清单校验和已同步' : ''}\n`)
     } catch (error) {
       /*
