@@ -12,6 +12,18 @@
  *
  * 用法：node scripts/fetch-pnpm.mjs
  */
+
+/**
+ * 为什么钉在 11 线而不是 latest。
+ *
+ * pnpm 12 把实现换成了原生二进制，npm 包里只剩一层 JS 壳，它「找到已安装的
+ * 二进制，或者下载一个再启动」。那等于把上面那段注释里刚解决掉的问题原样请
+ * 回来：全新机器、首次装插件、没网，照样跑不起来。
+ *
+ * 11 线仍是自包含的纯 JS 实现（bin/pnpm.cjs，约 20MB），符合「下载即用」。
+ * 哪天要上 12，得连对应平台的原生二进制一起打进包里，不是改个 tag 的事。
+ */
+const CHANNEL = 'latest-11'
 import { execFileSync } from 'node:child_process'
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -41,8 +53,8 @@ async function main() {
    * 考虑禁止不经 shell 直接 spawn .cmd/.bat，又变成 EINVAL。与其为它加
    * shell 并处理引号转义，不如省掉这层依赖——registry 的接口两个平台一样。
    */
-  process.stdout.write('正在下载 pnpm …\n')
-  const meta = await (await fetch('https://registry.npmjs.org/pnpm/latest')).json()
+  process.stdout.write(`正在下载 pnpm（${CHANNEL}）…\n`)
+  const meta = await (await fetch(`https://registry.npmjs.org/pnpm/${CHANNEL}`)).json()
   const url = meta?.dist?.tarball
   if (typeof url !== 'string') throw new Error('registry 未返回 pnpm 的 tarball 地址')
 
@@ -61,10 +73,15 @@ async function main() {
   await rm(staging, { recursive: true, force: true })
 
   const manifest = JSON.parse(await readFile(join(TARGET, 'package.json'), 'utf8'))
+  // 壳直接用内置 Node 跑这个文件（见 paths.ts 的 pnpmEntry），缺了就等于没带 pnpm
   if (!existsSync(join(TARGET, 'bin/pnpm.cjs'))) {
-    throw new Error('pnpm 产物缺少 bin/pnpm.cjs，包结构可能变了')
+    throw new Error(
+      `pnpm ${manifest.version} 里没有 bin/pnpm.cjs。`
+      + '12 线起实现换成了原生二进制、JS 入口会联网现下载，不能直接拿来分发；'
+      + `当前渠道是 ${CHANNEL}，若要换版本先确认包里仍有自包含的 bin/pnpm.cjs。`,
+    )
   }
-  process.stdout.write(`pnpm ${manifest.version} 已放入 vendor/pnpm（${meta.version}）\n`)
+  process.stdout.write(`pnpm ${manifest.version} 已放入 vendor/pnpm\n`)
 }
 
 main().catch((error) => {
