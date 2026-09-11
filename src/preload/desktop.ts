@@ -24,4 +24,17 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   openReleasePage() {
     ipcRenderer.send('desktop:open-release-page')
   },
+  /**
+   * 打开当前运行时版本的更新说明（外部浏览器），并消掉左下角那张升级提示卡。
+   *
+   * 运行时是后台自动升级的，用户没主动做过什么，所以「升了哪一版、都改了什么」
+   * 得由壳主动递到眼前。
+   */
+  openHarnessNotes() {
+    ipcRenderer.send('desktop:open-harness-notes')
+  },
+  /** 用户点「知道了」：只消掉提示卡，不打开任何页面。 */
+  dismissHarnessUpgrade() {
+    ipcRenderer.send('desktop:dismiss-harness-upgrade')
+  },
 })

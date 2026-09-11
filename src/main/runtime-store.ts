@@ -19,6 +19,14 @@ interface CurrentState {
   previous?: string
   /** 被标记为损坏的版本（就绪失败），升级检查会跳过。 */
   broken?: string[]
+  /**
+   * 已自动升级到该版本、但还没跟用户打过照面。
+   *
+   * 落盘而不是只放内存里：升级是后台静默做的，很可能发生在半夜或人不在电脑前的
+   * 时候（实测有一次在凌晨两点多完成）。只发系统通知的话横幅弹一下就没了，
+   * 等于没提示过。记在这里，下次打开窗口还能补上，用户确认后才清掉。
+   */
+  unseenUpgrade?: string
 }
 
 export interface SeedInstallProgress {
@@ -45,6 +53,33 @@ export async function writeCurrent(state: CurrentState): Promise<void> {
   const temp = `${currentFile()}.tmp`
   await writeFile(temp, `${JSON.stringify(state, undefined, 2)}\n`)
   await rename(temp, currentFile())
+}
+
+/** 记下「刚升到这一版、用户还没看见」。 */
+export async function markUpgraded(version: string): Promise<void> {
+  const current = await readCurrent()
+  if (current === undefined) return
+  await writeCurrent({ ...current, unseenUpgrade: version })
+}
+
+/** 用户已经看到升级提示，清掉标记。 */
+export async function clearUpgradeMark(): Promise<void> {
+  const current = await readCurrent()
+  if (current?.unseenUpgrade === undefined) return
+  const { unseenUpgrade: _seen, ...rest } = current
+  await writeCurrent(rest)
+}
+
+/**
+ * 待展示的升级提示版本号。
+ *
+ * 只在标记与当前启用版本一致时才认：万一之后又回滚了，那条「已升级到 X」的
+ * 提示就是假的，不该再弹给用户。
+ */
+export async function readUpgradeMark(): Promise<string | undefined> {
+  const current = await readCurrent()
+  if (current?.unseenUpgrade === undefined) return undefined
+  return current.unseenUpgrade === current.version ? current.unseenUpgrade : undefined
 }
 
 /** 异步解压，避免 Windows 首启时阻塞 Electron 主线程、让启动窗口看起来卡死。 */

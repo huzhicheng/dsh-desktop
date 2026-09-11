@@ -13,7 +13,7 @@ import { installVersion } from './installer'
 import { log } from './logger'
 import { harnessEntry } from './paths'
 import { fetchLatestVersion } from './registry'
-import { activateVersion, isMarkedBroken, pruneOldVersions, readCurrent, rollback } from './runtime-store'
+import { activateVersion, isMarkedBroken, markUpgraded, pruneOldVersions, readCurrent, rollback } from './runtime-store'
 
 export type UpdatePhase =
   | { phase: 'idle' }
@@ -35,6 +35,8 @@ export interface HarnessUpdaterOptions {
   onServiceRestarted: (origin: string) => void
   /** 升级状态变化回调（刷新托盘菜单）。 */
   onPhaseChange?: (phase: UpdatePhase) => void
+  /** 升级成功并已生效，界面需要给出一条留得住的提示。 */
+  onUpgraded?: (version: string) => void
 }
 
 export function createHarnessUpdater(options: HarnessUpdaterOptions): HarnessUpdater {
@@ -62,6 +64,9 @@ export function createHarnessUpdater(options: HarnessUpdaterOptions): HarnessUpd
       const origin = await options.service.restart(harnessEntry(version))
       await pruneOldVersions()
       options.onServiceRestarted(origin)
+      // 落盘标记，界面上那条提示要一直留到用户确认为止，见 unseenUpgrade 的注释
+      await markUpgraded(version)
+      options.onUpgraded?.(version)
       notify(APP_DISPLAY_NAME, `Harness 已升级到 ${version}`)
       log.info(`升级完成并已生效：${version}`)
     } catch (error) {

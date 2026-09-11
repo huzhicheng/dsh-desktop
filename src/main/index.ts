@@ -16,14 +16,14 @@ import {
 import {
   cancelFeishuRegistration, permissionJson, REQUIRED_EVENTS, startFeishuRegistration,
 } from './feishu-register'
-import { APP_DISPLAY_NAME } from './config'
+import { APP_DISPLAY_NAME, harnessReleaseUrl } from './config'
 import { createHarnessService } from './harness-service'
 import { initLogger, log } from './logger'
 import { assertBundledToolchain, harnessEntry, logsDir } from './paths'
 import { skipWelcomeNotice } from './onboarding'
 import { ensureBundledPlugins, writePluginsReadme } from './plugin-bootstrap'
 import { ensurePnpmShim } from './pnpm-shim'
-import { ensureSeedInstalled, readCurrent, rollback } from './runtime-store'
+import { clearUpgradeMark, ensureSeedInstalled, readCurrent, readUpgradeMark, rollback } from './runtime-store'
 import { focusWindow, hasWindow, paintSidebarChrome, reloadHarness, showShellWindow } from './shell-window'
 import { createTray, destroyTray, refreshTray, type TrayDeps } from './tray'
 import { createHarnessUpdater, type HarnessUpdater } from './updater'
@@ -214,7 +214,21 @@ async function boot(): Promise<void> {
   updater = createHarnessUpdater({
     service,
     onServiceRestarted: (nextOrigin) => { void reloadHarness(nextOrigin) },
-    onPhaseChange: () => { if (trayDeps !== undefined) refreshTray(trayDeps) },
+    onPhaseChange: (phase) => {
+      if (trayDeps !== undefined) refreshTray(trayDeps)
+      // 升级过程也要看得见：以前只有托盘菜单里有一行字，主界面上毫无动静
+      paintSidebarChrome(
+        phase.phase === 'downloading'
+          ? { upgradingTo: phase.version, upgradeMessage: phase.message }
+          : phase.phase === 'restarting'
+            ? { upgradingTo: phase.version, upgradeMessage: '正在重启本地服务' }
+            : { upgradingTo: '', upgradeMessage: '' },
+      )
+    },
+    onUpgraded: (version) => {
+      void refreshVersion()
+      paintSidebarChrome({ upgradedTo: version, upgradingTo: '', upgradeMessage: '' })
+    },
   })
 
   // 应用本体的新版本检测。状态一变就刷托盘、并把徽标推到侧栏「设置」右端。
@@ -262,6 +276,15 @@ async function boot(): Promise<void> {
   closeStatusWindow()
   // 侧栏顶部的运行时版本立刻就能显示，不必等 20 秒后那次升级检查
   paintSidebarChrome({ harnessVersion: state.version })
+  /*
+   * 补上错过的升级提示。
+   *
+   * 升级是后台做的，完成时窗口可能根本没开着（实测撞上过凌晨两点多那一次），
+   * 那条提示就白发了。标记留在 current.json 里，开窗时再递一次。
+   */
+  void readUpgradeMark().then((pending) => {
+    if (pending !== undefined) paintSidebarChrome({ upgradedTo: pending })
+  })
   log.info(`启动流程完成（总耗时 ${String(Math.round((Date.now() - bootStartedAt) / 1000))} 秒）`)
 
   registerBridgeIpc()
@@ -341,6 +364,22 @@ function registerBridgeIpc(): void {
   ipcMain.on('desktop:open-remote-control', () => { showBridgeSettings() })
   // 侧栏「设置」右端那个新版本徽标点击后走这里
   ipcMain.on('desktop:open-release-page', () => { appUpdater?.openReleasePage() })
+
+  // 左下角运行时升级提示卡的两个动作。看过就清标记，下次开窗不再打扰。
+  ipcMain.on('desktop:open-harness-notes', () => {
+    void (async () => {
+      const version = (await readCurrent())?.version
+      if (version !== undefined) await shell.openExternal(harnessReleaseUrl(version))
+      await clearUpgradeMark()
+      paintSidebarChrome({ upgradedTo: '' })
+    })()
+  })
+  ipcMain.on('desktop:dismiss-harness-upgrade', () => {
+    void (async () => {
+      await clearUpgradeMark()
+      paintSidebarChrome({ upgradedTo: '' })
+    })()
+  })
 
   // 扫码创建飞书应用：过程状态实时推给设置页，成功后直接落盘并回填界面。
   // 手填兜底始终保留——扫码依赖平台灰度，不能当唯一路径。

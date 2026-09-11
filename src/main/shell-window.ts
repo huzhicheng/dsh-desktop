@@ -186,6 +186,7 @@ const CHROME_SCRIPT = (payload: string): string => `
   (() => {
     const BADGE_ID = '__dsh_update_badge__'
     const VERSION_ID = '__dsh_harness_version__'
+    const CARD_ID = '__dsh_upgrade_card__'
     /*
      * 状态放全局，不放闭包。
      *
@@ -265,9 +266,82 @@ const CHROME_SCRIPT = (payload: string): string => `
       globalThis.__dshBadgeNarrow__ = narrow
     }
 
+    /*
+     * 左下角那张运行时升级提示卡。
+     *
+     * 为什么不只靠系统通知：运行时是后台静默升级的，实测有一次在凌晨两点多完成，
+     * 横幅弹一下就过去了，第二天打开应用完全看不出版本变过。这张卡片的状态存在
+     * current.json 里，一直留到用户点「查看更新内容」或「知道了」为止。
+     *
+     * 用 position:fixed 而不是塞进侧栏 DOM：dsh 的类名随版本变，塞进去要跟着
+     * 它的结构走；升级提示又恰恰在版本刚变过的时候出现，那是结构最可能对不上的
+     * 时刻。挂在视口上只依赖窗口本身，dsh 怎么改都不影响。
+     */
+    const paintUpgradeCard = () => {
+      const state = globalThis.__dshChrome__ ?? {}
+      const existing = document.getElementById(CARD_ID)
+      const busy = state.upgradingTo !== undefined && state.upgradingTo !== ''
+      const done = state.upgradedTo !== undefined && state.upgradedTo !== ''
+      if (!busy && !done) { existing?.remove(); return }
+
+      const card = existing ?? document.createElement('div')
+      if (existing === null) {
+        card.id = CARD_ID
+        document.body.appendChild(card)
+      }
+      /*
+       * 抬到侧栏底部「设置」那一块的上沿。
+       *
+       * 直接贴 bottom:12px 会正好盖住「设置」入口——那里还挂着应用更新徽标，
+       * 等于用一个提示把另一个提示埋了。量不到那块元素时退回 12px：卡片位置
+       * 差一点不影响读，挡住入口才是真问题。
+       */
+      const area = document.querySelector('[class*="settingsArea"]')
+      const lift = area === null
+        ? 12
+        : Math.round(window.innerHeight - area.getBoundingClientRect().top) + 8
+      card.style.cssText = 'position:fixed;left:12px;bottom:' + lift + 'px;z-index:2147483000;'
+        + 'max-width:268px;padding:10px 12px;border-radius:10px;'
+        + 'background:#1f2430;color:#f2f4f8;'
+        // 深色卡片在浅色主题下也读得清，省掉一套跟随主题的配色；描边保证它在
+        // 用户自设的深色背景图上也能跟底下的内容分开
+        + 'border:1px solid rgba(255,255,255,.14);box-shadow:0 6px 20px rgba(0,0,0,.28);'
+        + 'font-size:12px;line-height:1.5;pointer-events:auto;user-select:none'
+
+      if (busy) {
+        card.textContent = ''
+        const title = document.createElement('div')
+        title.textContent = '正在升级 Harness 到 ' + state.upgradingTo
+        title.style.cssText = 'font-weight:600'
+        const detail = document.createElement('div')
+        detail.textContent = state.upgradeMessage ?? ''
+        detail.style.cssText = 'margin-top:2px;opacity:.72'
+        card.append(title, detail)
+        return
+      }
+
+      card.textContent = ''
+      const title = document.createElement('div')
+      title.textContent = 'Harness 已升级到 ' + state.upgradedTo
+      title.style.cssText = 'font-weight:600'
+      const actions = document.createElement('div')
+      actions.style.cssText = 'display:flex;gap:14px;margin-top:6px'
+      const link = document.createElement('span')
+      link.textContent = '查看更新内容'
+      link.style.cssText = 'color:#7fb2ff;cursor:pointer'
+      link.addEventListener('click', () => { globalThis.dshDesktop?.openHarnessNotes?.() })
+      const ack = document.createElement('span')
+      ack.textContent = '知道了'
+      ack.style.cssText = 'opacity:.7;cursor:pointer'
+      ack.addEventListener('click', () => { globalThis.dshDesktop?.dismissHarnessUpgrade?.() })
+      actions.append(link, ack)
+      card.append(title, actions)
+    }
+
     const paint = () => {
       paintVersion()
       paintBadge()
+      paintUpgradeCard()
 
       /*
        * 盯着侧栏宽度变化。
@@ -331,10 +405,23 @@ export interface SidebarChrome {
   latest: string
   /** 当前使用的 Harness 运行时版本。 */
   harnessVersion: string
+  /** 正在升级到的运行时版本；空串表示当前没有在升级。 */
+  upgradingTo: string
+  /** 升级进度的一句话描述。 */
+  upgradeMessage: string
+  /** 已升级完成、用户还没确认的运行时版本；空串表示没有待确认的提示。 */
+  upgradedTo: string
 }
 
 /** 最近一次推给页面的状态，导航后要重放。 */
-let lastChrome: SidebarChrome = { hasUpdate: false, latest: '', harnessVersion: '' }
+let lastChrome: SidebarChrome = {
+  hasUpdate: false,
+  latest: '',
+  harnessVersion: '',
+  upgradingTo: '',
+  upgradeMessage: '',
+  upgradedTo: '',
+}
 
 /**
  * 更新侧栏上的附加信息；只传要改的那部分。

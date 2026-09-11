@@ -32,6 +32,19 @@ export const APP_REPO = 'huzhicheng/dsh-desktop'
 /** 发布页地址；检测到新版时引导用户来这里下载。 */
 export const APP_RELEASES_URL = `https://github.com/${APP_REPO}/releases/latest`
 
+/** 上游 Harness 的仓库，运行时升级后引导用户去看这一版做了什么改动。 */
+export const HARNESS_REPO = 'deepseek-ai/deepseek-harness'
+
+/**
+ * 某个运行时版本的发布说明页。
+ *
+ * 上游是 monorepo，标签带包名前缀，形如 `dsh-v0.1.5-rc.2`（已对着真实
+ * Release 核过，不是推测出来的命名）。
+ */
+export function harnessReleaseUrl(version: string): string {
+  return `https://github.com/${HARNESS_REPO}/releases/tag/dsh-v${version}`
+}
+
 /** 服务启动就绪的最长等待时间（首启需解压种子，放宽一些）。 */
 export const READINESS_TIMEOUT_MS = 120_000
 
